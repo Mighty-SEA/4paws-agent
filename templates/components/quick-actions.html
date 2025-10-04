@@ -1,0 +1,37 @@
+<!-- Quick Actions Component -->
+<div class="quick-actions">
+    <h2>⚡ Quick Actions</h2>
+    <div class="action-grid">
+        <button class="action-btn btn-success" onclick="startAll()">
+            <span class="action-icon">▶️</span>
+            <span class="action-text">Start All</span>
+        </button>
+        <button class="action-btn btn-danger" onclick="stopAll()">
+            <span class="action-icon">⏹️</span>
+            <span class="action-text">Stop All</span>
+        </button>
+        <button class="action-btn btn-info" onclick="checkUpdates()">
+            <span class="action-icon">🔄</span>
+            <span class="action-text">Check Updates</span>
+        </button>
+        <button class="action-btn btn-warning" onclick="showSetupModal()">
+            <span class="action-icon">⚙️</span>
+            <span class="action-text">Setup Apps</span>
+        </button>
+        <button class="action-btn btn-primary" onclick="showInstallModal()">
+            <span class="action-icon">📦</span>
+            <span class="action-text">Install Apps</span>
+        </button>
+        <button class="action-btn btn-secondary" onclick="showSeedModal()">
+            <span class="action-icon">🌱</span>
+            <span class="action-text">Seed Database</span>
+        </button>
+    </div>
+</div>
+
+<!-- Updates Section -->
+<div class="updates-section" id="updates-section" style="display: none;">
+    <h2>📥 Available Updates</h2>
+    <div id="updates-content"></div>
+</div>
+

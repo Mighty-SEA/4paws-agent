@@ -1,5 +1,5 @@
-// WebSocket connection
-const socket = io();
+// WebSocket connection (global for other scripts)
+var socket = io();
 
 // State
 let currentLogService = 'agent';
@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
     refreshStatus();
     startAutoRefresh();
-    showLogs('agent');
 });
 
 // WebSocket events
@@ -60,21 +59,51 @@ function updateStatus(data) {
     document.getElementById('memory-usage').textContent = `${data.system.memory.toFixed(1)}%`;
     document.getElementById('disk-usage').textContent = `${data.system.disk.toFixed(1)}%`;
     
-    // Update services
-    updateServiceStatus('mariadb', data.mariadb, data.ports.mariadb);
-    updateServiceStatus('backend', data.backend, data.ports.backend, data.versions.backend);
-    updateServiceStatus('frontend', data.frontend, data.ports.frontend, data.versions.frontend);
+    // Update services (compact view)
+    updateServiceStatusCompact('mariadb', data.mariadb, data.ports.mariadb);
+    updateServiceStatusCompact('backend', data.backend, data.ports.backend, data.versions.backend);
+    updateServiceStatusCompact('frontend', data.frontend, data.ports.frontend, data.versions.frontend);
     
-    // Update paths
+    // Update paths (compact view)
     if (data.paths) {
-        document.getElementById('frontend-path').textContent = `📁 ${data.paths.frontend}`;
-        document.getElementById('backend-path').textContent = `📁 ${data.paths.backend}`;
-        document.getElementById('mariadb-path').textContent = `📁 ${data.paths.mariadb}`;
+        const frontendPathEl = document.getElementById('frontend-path-compact');
+        const backendPathEl = document.getElementById('backend-path-compact');
+        const mariadbPathEl = document.getElementById('mariadb-path-compact');
         
-        // Update URL status based on service running state
-        document.getElementById('frontend-url-status').className = data.frontend.running ? 'url-status running' : 'url-status stopped';
-        document.getElementById('backend-url-status').className = data.backend.running ? 'url-status running' : 'url-status stopped';
-        document.getElementById('mariadb-url-status').className = data.mariadb.running ? 'url-status running' : 'url-status stopped';
+        if (frontendPathEl) frontendPathEl.textContent = `📁 ${data.paths.frontend}`;
+        if (backendPathEl) backendPathEl.textContent = `📁 ${data.paths.backend}`;
+        if (mariadbPathEl) mariadbPathEl.textContent = `📁 ${data.paths.mariadb}`;
+    }
+}
+
+// Update compact service status
+function updateServiceStatusCompact(service, status, port, version = null) {
+    const statusBadge = document.getElementById(`${service}-status-mini`);
+    const pidElement = document.getElementById(`${service}-pid-compact`);
+    const cpuElement = document.getElementById(`${service}-cpu-compact`);
+    const memoryElement = document.getElementById(`${service}-memory-compact`);
+    
+    if (!statusBadge) return; // Element not found, skip
+    
+    if (status.running) {
+        statusBadge.textContent = 'Running';
+        statusBadge.className = 'status-badge-mini running';
+        if (pidElement) pidElement.textContent = status.pid;
+        if (cpuElement) cpuElement.textContent = `${status.cpu.toFixed(1)}%`;
+        if (memoryElement) memoryElement.textContent = `${status.memory.toFixed(1)} MB`;
+    } else {
+        statusBadge.textContent = 'Stopped';
+        statusBadge.className = 'status-badge-mini stopped';
+        if (pidElement) pidElement.textContent = '--';
+        if (cpuElement) cpuElement.textContent = '--';
+        if (memoryElement) memoryElement.textContent = '--';
+    }
+    
+    if (version) {
+        const versionElement = document.getElementById(`${service}-version-compact`);
+        if (versionElement) {
+            versionElement.textContent = version.version || '--';
+        }
     }
 }
 
@@ -85,6 +114,8 @@ function updateServiceStatus(service, status, port, version = null) {
     const cpuElement = document.getElementById(`${service}-cpu`);
     const memoryElement = document.getElementById(`${service}-memory`);
     const portElement = document.getElementById(`${service}-port`);
+    
+    if (!card) return; // Element not found, skip
     
     if (status.running) {
         card.classList.add('service-running');
@@ -368,14 +399,37 @@ window.onclick = function(event) {
     }
 }
 
-// Loading Overlay
+// Loading Indicator (in terminal instead of fullscreen)
 function showLoading(text = 'Processing...') {
-    document.getElementById('loadingText').textContent = text;
-    document.getElementById('loadingOverlay').style.display = 'flex';
+    // Add loading indicator to terminal
+    const terminal = document.getElementById('logsTerminal');
+    if (!terminal) return;
+    
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'terminal-loading';
+    loadingDiv.className = 'log-entry info';
+    loadingDiv.innerHTML = `
+        <span class="log-timestamp">[${getCurrentTime()}]</span>
+        <span class="loading-spinner-inline">⏳</span>
+        <span>${text}</span>
+    `;
+    terminal.appendChild(loadingDiv);
+    
+    // Auto-scroll
+    terminal.scrollTop = terminal.scrollHeight;
 }
 
 function hideLoading() {
-    document.getElementById('loadingOverlay').style.display = 'none';
+    // Remove loading indicator from terminal
+    const loadingDiv = document.getElementById('terminal-loading');
+    if (loadingDiv) {
+        loadingDiv.remove();
+    }
+}
+
+function getCurrentTime() {
+    const now = new Date();
+    return now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 // Notifications

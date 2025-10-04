@@ -69,9 +69,28 @@ body {
     gap: 15px;
 }
 
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-logo {
+    height: 50px;
+    width: auto;
+    object-fit: contain;
+}
+
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .header-left h1 {
     font-size: 24px;
     font-weight: 600;
+    margin: 0;
 }
 
 .version {
@@ -85,6 +104,29 @@ body {
 .header-right {
     display: flex;
     gap: 10px;
+    align-items: center;
+}
+
+.logs-btn {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.logs-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .theme-toggle, .refresh-btn {

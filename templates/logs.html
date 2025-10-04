@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs - 4Paws Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        .terminal-container {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        .terminal-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .terminal-filter {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .terminal-output {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 500px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #d4d4d4;
+            position: relative;
+        }
+        
+        .terminal-output.light {
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .log-entry:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+        
+        .log-entry.success {
+            color: #81c784;
+        }
+        
+        .log-entry.warning {
+            color: #ffb74d;
+        }
+        
+        .log-entry.error {
+            color: #e57373;
+        }
+        
+        .log-entry.action {
+            color: #ba68c8;
+            font-weight: bold;
+        }
+        
+        .terminal-output.light .log-entry.info {
+            color: #0288d1;
+        }
+        
+        .terminal-output.light .log-entry.success {
+            color: #388e3c;
+        }
+        
+        .terminal-output.light .log-entry.warning {
+            color: #f57c00;
+        }
+        
+        .terminal-output.light .log-entry.error {
+            color: #d32f2f;
+        }
+        
+        .terminal-output.light .log-entry.action {
+            color: #7b1fa2;
+        }
+        
+        .log-timestamp {
+            color: #808080;
+            margin-right: 8px;
+        }
+        
+        .log-action-tag {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 8px;
+            font-size: 11px;
+        }
+        
+        .terminal-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: #4fc3f7;
+            margin-left: 4px;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        .current-action {
+            background: var(--accent-color);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .action-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .stat-value {
+            color: var(--text-primary);
+            font-weight: bold;
+        }
+        
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .connection-status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .connection-status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        
+        .connection-status.connected .connection-dot {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="topbar">
+            <div class="nav-section">
+                <h1 class="logo">🐾 4Paws Agent</h1>
+                <div class="nav-links">
+                    <a href="/">Dashboard</a>
+                    <a href="/logs" class="active">Logs</a>
+                </div>
+            </div>
+            <div class="nav-section">
+                <div id="connectionStatus" class="connection-status disconnected">
+                    <span class="connection-dot"></span>
+                    <span>Disconnected</span>
+                </div>
+                <button class="theme-toggle" onclick="toggleTheme()">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="page-header">
+                <div>
+                    <h2>Real-Time Logs</h2>
+                    <p class="subtitle">Monitor all agent actions and operations</p>
+                </div>
+            </div>
+
+            <!-- Current Action -->
+            <div id="currentActionBar" style="display: none;"></div>
+
+            <!-- Stats Bar -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-label">Total Logs:</span>
+                    <span class="stat-value" id="totalLogs">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Errors:</span>
+                    <span class="stat-value" style="color: var(--error-color);" id="errorCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Warnings:</span>
+                    <span class="stat-value" style="color: var(--warning-color);" id="warningCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Success:</span>
+                    <span class="stat-value" style="color: var(--success-color);" id="successCount">0</span>
+                </div>
+            </div>
+
+            <!-- Terminal Container -->
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <h3>Terminal Output</h3>
+                    <div class="terminal-controls">
+                        <select id="actionFilter" class="terminal-filter" onchange="filterLogs()">
+                            <option value="">All Actions</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="toggleAutoScroll()">
+                            <span id="autoScrollIcon">📌</span> Auto-scroll: <span id="autoScrollStatus">ON</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadLogs()">📥 Download</button>
+                        <button class="btn btn-danger" onclick="clearLogs()">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="terminalOutput" class="terminal-output">
+                    <div class="log-entry info">
+                        <span class="log-timestamp">[--:--:--]</span>
+                        <span>🚀 Connecting to 4Paws Agent...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        // WebSocket connection
+        const socket = io();
+        let autoScroll = true;
+        let logs = [];
+        let currentFilter = '';
+        const actions = new Set();
+        
+        // Stats
+        let stats = {
+            total: 0,
+            errors: 0,
+            warnings: 0,
+            success: 0
+        };
+
+        // Connection handling
+        socket.on('connect', () => {
+            updateConnectionStatus(true);
+            addSystemLog('✅ Connected to agent');
+            loadExistingLogs();
+        });
+
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+            addSystemLog('❌ Disconnected from agent. Reconnecting...');
+        });
+
+        socket.on('log_entry', (data) => {
+            addLogEntry(data);
+        });
+
+        socket.on('action_status', (data) => {
+            if (data.status === 'completed' || data.status === 'failed') {
+                document.getElementById('currentActionBar').style.display = 'none';
+            }
+        });
+
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (connected) {
+                statusEl.className = 'connection-status connected';
+                statusEl.innerHTML = '<span class="connection-dot"></span><span>Connected</span>';
+            } else {
+                statusEl.className = 'connection-status disconnected';
+                statusEl.innerHTML = '<span class="connection-dot"></span><span>Disconnected</span>';
+            }
+        }
+
+        function addSystemLog(message) {
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const entry = {
+                timestamp: timestamp,
+                level: 'info',
+                message: message,
+                full_text: `[${timestamp}] ${message}`
+            };
+            addLogEntry(entry);
+        }
+
+        async function loadExistingLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                
+                if (data.success) {
+                    logs = data.logs;
+                    renderLogs();
+                    updateStats();
+                    
+                    // Update current action
+                    if (data.current_action) {
+                        showCurrentAction(data.current_action);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load logs:', error);
+            }
+        }
+
+        function addLogEntry(entry) {
+            logs.push(entry);
+            
+            // Add action to filter
+            if (entry.action && !actions.has(entry.action)) {
+                actions.add(entry.action);
+                updateActionFilter();
+            }
+            
+            // Update stats
+            stats.total++;
+            if (entry.level === 'error') stats.errors++;
+            if (entry.level === 'warning') stats.warnings++;
+            if (entry.level === 'success') stats.success++;
+            updateStats();
+            
+            // Render if matches filter
+            if (!currentFilter || entry.action === currentFilter) {
+                appendLogToDOM(entry);
+            }
+        }
+
+        function appendLogToDOM(entry) {
+            const output = document.getElementById('terminalOutput');
+            const logDiv = document.createElement('div');
+            logDiv.className = `log-entry ${entry.level}`;
+            
+            let html = `<span class="log-timestamp">[${entry.timestamp}]</span>`;
+            if (entry.action) {
+                html += `<span class="log-action-tag">${entry.action}</span>`;
+            }
+            html += `<span>${entry.message}</span>`;
+            
+            logDiv.innerHTML = html;
+            output.appendChild(logDiv);
+            
+            // Auto-scroll
+            if (autoScroll) {
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        function renderLogs() {
+            const output = document.getElementById('terminalOutput');
+            output.innerHTML = '';
+            
+            const filteredLogs = currentFilter 
+                ? logs.filter(log => log.action === currentFilter)
+                : logs;
+            
+            filteredLogs.forEach(entry => appendLogToDOM(entry));
+        }
+
+        function updateStats() {
+            document.getElementById('totalLogs').textContent = stats.total;
+            document.getElementById('errorCount').textContent = stats.errors;
+            document.getElementById('warningCount').textContent = stats.warnings;
+            document.getElementById('successCount').textContent = stats.success;
+        }
+
+        function updateActionFilter() {
+            const filterSelect = document.getElementById('actionFilter');
+            const currentValue = filterSelect.value;
+            
+            filterSelect.innerHTML = '<option value="">All Actions</option>';
+            Array.from(actions).sort().forEach(action => {
+                const option = document.createElement('option');
+                option.value = action;
+                option.textContent = action;
+                if (action === currentValue) option.selected = true;
+                filterSelect.appendChild(option);
+            });
+        }
+
+        function filterLogs() {
+            currentFilter = document.getElementById('actionFilter').value;
+            renderLogs();
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            document.getElementById('autoScrollStatus').textContent = autoScroll ? 'ON' : 'OFF';
+            document.getElementById('autoScrollIcon').textContent = autoScroll ? '📌' : '📍';
+            
+            if (autoScroll) {
+                const output = document.getElementById('terminalOutput');
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        async function downloadLogs() {
+            try {
+                window.location.href = '/api/logs/download';
+            } catch (error) {
+                alert('Failed to download logs: ' + error.message);
+            }
+        }
+
+        async function clearLogs() {
+            if (!confirm('Are you sure you want to clear all logs?')) return;
+            
+            try {
+                const response = await fetch('/api/logs/clear', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logs = [];
+                    stats = { total: 0, errors: 0, warnings: 0, success: 0 };
+                    updateStats();
+                    document.getElementById('terminalOutput').innerHTML = '';
+                    addSystemLog('🗑️ Logs cleared');
+                }
+            } catch (error) {
+                alert('Failed to clear logs: ' + error.message);
+            }
+        }
+
+        function showCurrentAction(action) {
+            const bar = document.getElementById('currentActionBar');
+            bar.style.display = 'flex';
+            bar.className = 'current-action';
+            bar.innerHTML = `
+                <div class="action-spinner"></div>
+                <span>Running: ${action.action} (${Math.floor(action.duration)}s)</span>
+            `;
+        }
+
+        // Apply theme on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const theme = localStorage.getItem('theme') || 'dark';
+            document.body.className = theme;
+            
+            const output = document.getElementById('terminalOutput');
+            if (theme === 'light') {
+                output.classList.add('light');
+            }
+        });
+
+        // Update terminal theme when toggling
+        function toggleTheme() {
+            const body = document.body;
+            const newTheme = body.className === 'dark' ? 'light' : 'dark';
+            body.className = newTheme;
+            localStorage.setItem('theme', newTheme);
+            
+            const themeIcon = document.querySelector('.theme-icon');
+            themeIcon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+            
+            const output = document.getElementById('terminalOutput');
+            if (newTheme === 'light') {
+                output.classList.add('light');
+            } else {
+                output.classList.remove('light');
+            }
+        }
+    </script>
+</body>
+</html>
+

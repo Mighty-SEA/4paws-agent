@@ -53,8 +53,38 @@ class TrayApp:
             self.lock_socket = None
     
     def create_icon_image(self, color="white"):
-        """Create a simple paw icon"""
-        # Create a 64x64 image with transparent background
+        """Load icon from file or create fallback"""
+        try:
+            # Try to load favicon.ico
+            icon_path = Path(__file__).parent / "static" / "img" / "favicon.ico"
+            if icon_path.exists():
+                image = Image.open(icon_path)
+                # Resize if needed
+                if image.size != (64, 64):
+                    image = image.resize((64, 64), Image.Resampling.LANCZOS)
+                
+                # Apply color tint for status indication
+                if color != "white":
+                    # Create a colored overlay
+                    overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                    draw = ImageDraw.Draw(overlay)
+                    
+                    if color == "green":
+                        tint = (46, 204, 113, 100)  # Green for running
+                    elif color == "yellow":
+                        tint = (243, 156, 18, 100)  # Yellow for update available
+                    else:
+                        tint = (149, 165, 166, 100)  # Gray for stopped
+                    
+                    # Draw colored circle in corner as status indicator
+                    draw.ellipse([48, 48, 62, 62], fill=tint)
+                    image = Image.alpha_composite(image.convert('RGBA'), overlay)
+                
+                return image
+        except Exception as e:
+            print(f"Warning: Could not load icon from file: {e}")
+        
+        # Fallback: Create a simple paw icon
         image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
         

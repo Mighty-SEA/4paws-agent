@@ -1,0 +1,56 @@
+<!-- Modals Component -->
+
+<!-- Install Modal -->
+<div id="installModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('installModal')">&times;</span>
+        <h2>📦 Install Applications</h2>
+        <p>Download and install applications from GitHub releases</p>
+        <div class="modal-buttons">
+            <button class="btn btn-primary" onclick="installApp('all')">Install Both</button>
+            <button class="btn btn-primary" onclick="installApp('frontend')">Frontend Only</button>
+            <button class="btn btn-primary" onclick="installApp('backend')">Backend Only</button>
+        </div>
+    </div>
+</div>
+
+<!-- Setup Modal -->
+<div id="setupModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('setupModal')">&times;</span>
+        <h2>⚙️ Setup Applications</h2>
+        <p>Install dependencies, run migrations, and prepare applications</p>
+        <div class="modal-buttons">
+            <button class="btn btn-warning" onclick="setupApp('all')">Setup Both</button>
+            <button class="btn btn-warning" onclick="setupApp('frontend')">Frontend Only</button>
+            <button class="btn btn-warning" onclick="setupApp('backend')">Backend Only</button>
+        </div>
+    </div>
+</div>
+
+<!-- Seed Modal -->
+<div id="seedModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('seedModal')">&times;</span>
+        <h2>🌱 Seed Database</h2>
+        <p>Populate database with sample data</p>
+        <div class="modal-buttons">
+            <button class="btn btn-secondary" onclick="seedDatabase('all')">Seed All</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('users')">Users</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('services')">Services</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('store-settings')">Store Settings</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('pet-species')">Pet Species</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('owners-pets')">Owners & Pets</button>
+            <button class="btn btn-secondary" onclick="seedDatabase('products-mix')">Products</button>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p id="loadingText">Processing...</p>
+    </div>
+</div>
+

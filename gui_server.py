@@ -10,13 +10,17 @@ import socket
 import psutil
 from pathlib import Path
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 # Add agent.py to path
 sys.path.insert(0, str(Path(__file__).parent))
-from agent import Agent, ProcessManager, Config, VersionManager
+from agent import Agent, ProcessManager, Config, VersionManager, set_agent_log_manager
+from log_manager import init_log_manager, get_log_manager
+from installation_server import start_installation_server, stop_installation_server, get_installation_server
+import threading
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '4paws-agent-secret'
@@ -34,6 +38,24 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global agent instance
 agent = Agent()
+
+# Initialize log manager
+log_file = Path(__file__).parent / 'logs' / 'agent_web.log'
+log_manager = init_log_manager(log_file, socketio)
+
+# Connect agent logging to web GUI
+set_agent_log_manager(log_manager)
+
+# Reduce Flask logging verbosity (disable HTTP access logs in Web GUI)
+import logging as flask_logging
+flask_logging.getLogger('werkzeug').setLevel(flask_logging.WARNING)
+
+# Update check cache (1 hour)
+UPDATE_CHECK_CACHE = {
+    'last_check': None,
+    'result': None,
+    'cache_duration': 3600  # 1 hour in seconds
+}
 
 def find_available_port(start_port=5000):
     """Find available port starting from start_port"""
@@ -68,6 +90,11 @@ def index():
     """Render main dashboard"""
     return render_template('index.html')
 
+@app.route('/logs')
+def logs():
+    """Render logs page"""
+    return render_template('logs.html')
+
 @app.route('/api/status')
 def api_status():
     """Get current status of all services"""
@@ -100,6 +127,9 @@ def api_status():
 def api_start(service):
     """Start a service"""
     try:
+        log_manager.start_action(f'start-{service}')
+        log_manager.info(f"🚀 Starting {service}...")
+        
         if service == 'all':
             # Don't skip setup - let auto-detect handle it
             success = agent.start_all(skip_setup=False)
@@ -110,28 +140,47 @@ def api_start(service):
         elif service == 'frontend':
             success = ProcessManager.start_frontend()
         else:
+            log_manager.error(f"Unknown service: {service}")
             return jsonify({'success': False, 'error': f'Unknown service: {service}'}), 400
         
+        if success:
+            log_manager.success(f"✅ {service} started successfully")
+        else:
+            log_manager.error(f"❌ Failed to start {service}")
+        
+        log_manager.end_action(f'start-{service}', success)
         return jsonify({'success': success})
     except Exception as e:
+        log_manager.error(f"❌ Error starting {service}: {str(e)}")
+        log_manager.end_action(f'start-{service}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/stop/<service>', methods=['POST'])
 def api_stop(service):
     """Stop a service"""
     try:
+        log_manager.start_action(f'stop-{service}')
+        log_manager.info(f"⏹️ Stopping {service}...")
+        
         if service == 'all':
             agent.stop_all()
+            log_manager.success(f"✅ All services stopped")
+            log_manager.end_action(f'stop-{service}', True)
             return jsonify({'success': True})
         elif service in ['mariadb', 'backend', 'frontend']:
             if service in ProcessManager.processes:
                 ProcessManager.processes[service].terminate()
                 ProcessManager.processes[service].wait(timeout=10)
                 del ProcessManager.processes[service]
+            log_manager.success(f"✅ {service} stopped")
+            log_manager.end_action(f'stop-{service}', True)
             return jsonify({'success': True})
         else:
+            log_manager.error(f"Unknown service: {service}")
             return jsonify({'success': False, 'error': f'Unknown service: {service}'}), 400
     except Exception as e:
+        log_manager.error(f"❌ Error stopping {service}: {str(e)}")
+        log_manager.end_action(f'stop-{service}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/updates')
@@ -162,9 +211,21 @@ def api_logs(service):
 def api_install(component):
     """Install frontend/backend/all"""
     try:
+        log_manager.start_action(f'install-{component}')
+        log_manager.info(f"📦 Installing {component}...")
+        
         success = agent.install_apps(component)
+        
+        if success:
+            log_manager.success(f"✅ {component} installed successfully")
+        else:
+            log_manager.error(f"❌ Failed to install {component}")
+        
+        log_manager.end_action(f'install-{component}', success)
         return jsonify({'success': success})
     except Exception as e:
+        log_manager.error(f"❌ Error installing {component}: {str(e)}")
+        log_manager.end_action(f'install-{component}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/update/<component>', methods=['POST'])
@@ -175,22 +236,45 @@ def api_update(component):
         data = request.get_json() or {}
         force = data.get('force', False)
         
+        log_manager.start_action(f'update-{component}')
+        log_manager.info(f"🔄 Updating {component}...")
+        
         if component == 'all':
             success = agent.update_apps('all', force=force)
         else:
             success = agent.update_apps(component, force=force)
         
+        if success:
+            log_manager.success(f"✅ {component} updated successfully")
+        else:
+            log_manager.error(f"❌ Failed to update {component}")
+        
+        log_manager.end_action(f'update-{component}', success)
         return jsonify({'success': success})
     except Exception as e:
+        log_manager.error(f"❌ Error updating {component}: {str(e)}")
+        log_manager.end_action(f'update-{component}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/setup/<component>', methods=['POST'])
 def api_setup(component):
     """Setup apps (install dependencies, migrate, etc)"""
     try:
+        log_manager.start_action(f'setup-{component}')
+        log_manager.info(f"⚙️ Setting up {component}...")
+        
         success = agent.setup_apps(component)
+        
+        if success:
+            log_manager.success(f"✅ {component} setup completed")
+        else:
+            log_manager.error(f"❌ Failed to setup {component}")
+        
+        log_manager.end_action(f'setup-{component}', success)
         return jsonify({'success': success})
     except Exception as e:
+        log_manager.error(f"❌ Error setting up {component}: {str(e)}")
+        log_manager.end_action(f'setup-{component}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/seed', methods=['POST'])
@@ -200,9 +284,21 @@ def api_seed():
         data = request.get_json() or {}
         seed_type = data.get('type', 'all')
         
+        log_manager.start_action(f'seed-{seed_type}')
+        log_manager.info(f"🌱 Seeding database ({seed_type})...")
+        
         success = agent.seed_database(seed_type)
+        
+        if success:
+            log_manager.success(f"✅ Database seeded successfully ({seed_type})")
+        else:
+            log_manager.error(f"❌ Failed to seed database ({seed_type})")
+        
+        log_manager.end_action(f'seed-{seed_type}', success)
         return jsonify({'success': success})
     except Exception as e:
+        log_manager.error(f"❌ Error seeding database: {str(e)}")
+        log_manager.end_action(f'seed-{seed_type}', False)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/check-tools')
@@ -231,12 +327,34 @@ def api_check_tools():
 
 @app.route('/api/update/check')
 def api_update_check():
-    """Check for updates (for application integration)"""
+    """Check for updates (for application integration) - Cached for 1 hour"""
     try:
+        import time
+        current_time = time.time()
+        
+        # Check if cache is valid (less than 1 hour old)
+        if (UPDATE_CHECK_CACHE['last_check'] is not None and 
+            UPDATE_CHECK_CACHE['result'] is not None and
+            (current_time - UPDATE_CHECK_CACHE['last_check']) < UPDATE_CHECK_CACHE['cache_duration']):
+            
+            # Return cached result (NO LOG - too verbose)
+            cached_result = UPDATE_CHECK_CACHE['result']
+            cached_age = int(current_time - UPDATE_CHECK_CACHE['last_check'])
+            
+            return jsonify({
+                **cached_result,
+                'cached': True,
+                'cache_age': cached_age,
+                'next_check_in': UPDATE_CHECK_CACHE['cache_duration'] - cached_age
+            })
+        
+        # Cache expired or doesn't exist, perform new check
+        # Only log REAL checks (when actually calling GitHub API)
+        log_manager.info("🔍 Checking for updates from GitHub...")
         versions = VersionManager.load_versions()
         updates = agent.check_updates()
         
-        return jsonify({
+        result = {
             'current': {
                 'frontend': versions['frontend']['version'],
                 'backend': versions['backend']['version']
@@ -254,10 +372,40 @@ def api_update_check():
                     'latest': updates.get('backend') if updates else None,
                     'has_update': 'backend' in updates if updates else False
                 }
-            }
+            },
+            'cached': False
+        }
+        
+        # Update cache
+        UPDATE_CHECK_CACHE['last_check'] = current_time
+        UPDATE_CHECK_CACHE['result'] = result
+        
+        # Log result only (not cache info)
+        if result['has_update']:
+            log_manager.info(f"🆕 Updates available! (cached for 1 hour)")
+        else:
+            log_manager.success(f"✅ All up to date (cached for 1 hour)")
+        
+        return jsonify(result)
+    except Exception as e:
+        log_manager.error(f"❌ Update check failed: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/check/clear-cache', methods=['POST'])
+def api_update_check_clear_cache():
+    """Clear update check cache (force fresh check on next request)"""
+    try:
+        UPDATE_CHECK_CACHE['last_check'] = None
+        UPDATE_CHECK_CACHE['result'] = None
+        log_manager.success("✅ Update check cache cleared")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Cache cleared. Next check will be fresh.'
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        log_manager.error(f"❌ Failed to clear cache: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/update/start', methods=['POST'])
 def api_update_start():
@@ -265,6 +413,10 @@ def api_update_start():
     try:
         data = request.get_json() or {}
         component = data.get('component', 'all')
+        
+        # Clear update cache since we're updating
+        UPDATE_CHECK_CACHE['last_check'] = None
+        UPDATE_CHECK_CACHE['result'] = None
         
         # Start update in background thread
         import threading
@@ -436,10 +588,70 @@ def perform_update_with_notifications(component):
             'progress': 0
         })
 
+# ============================================================================
+# Log Management API Endpoints
+# ============================================================================
+
+@app.route('/api/logs')
+def api_get_logs():
+    """Get log entries from buffer"""
+    action = request.args.get('action')
+    limit = request.args.get('limit', type=int)
+    
+    logs = log_manager.get_logs(action=action, limit=limit)
+    
+    return jsonify({
+        'success': True,
+        'logs': logs,
+        'count': len(logs),
+        'current_action': log_manager.get_current_action()
+    })
+
+@app.route('/api/logs/download')
+def api_download_logs():
+    """Download full log file"""
+    from flask import send_file
+    
+    if not log_manager.log_file or not log_manager.log_file.exists():
+        return jsonify({
+            'success': False,
+            'error': 'Log file not found'
+        }), 404
+    
+    return send_file(
+        log_manager.log_file,
+        mimetype='text/plain',
+        as_attachment=True,
+        download_name='4paws-agent.log'
+    )
+
+@app.route('/api/logs/clear', methods=['POST'])
+def api_clear_logs():
+    """Clear log buffer"""
+    log_manager.clear_logs()
+    return jsonify({
+        'success': True,
+        'message': 'Logs cleared successfully'
+    })
+
+@app.route('/api/logs/current-action')
+def api_current_action():
+    """Get currently running action"""
+    action = log_manager.get_current_action()
+    return jsonify({
+        'success': True,
+        'action': action
+    })
+
+# ============================================================================
+# WebSocket Events
+# ============================================================================
+
 @socketio.on('connect')
 def handle_connect():
     """Handle WebSocket connection"""
     emit('connected', {'data': 'Connected to 4Paws Agent'})
+    log_manager.info("🔌 New client connected to Web GUI")
 
 @socketio.on('request_status')
 def handle_status_request():
@@ -447,12 +659,82 @@ def handle_status_request():
     status = api_status().get_json()
     emit('status_update', status)
 
+def run_auto_install():
+    """
+    Run auto-installation in background thread
+    This is called when apps are not installed yet
+    """
+    install_server = get_installation_server(port=3100)
+    
+    def progress_callback(progress, step=None, status=None, title=None, description=None):
+        """Send progress updates to installation page"""
+        install_server.send_progress(progress, step, status, title, description)
+    
+    def log_callback(message, level='info'):
+        """Send log messages to installation page"""
+        install_server.send_log(message, level)
+    
+    # Wait a bit for server to start
+    time.sleep(2)
+    
+    # Run installation
+    log_callback("🚀 Starting first-time installation...", "info")
+    success = agent.auto_install_and_setup(progress_callback, log_callback)
+    
+    if success:
+        log_callback("✅ Installation completed successfully!", "success")
+        install_server.send_complete()
+        
+        # Wait a bit before stopping installation server
+        time.sleep(3)
+        
+        # Stop installation server
+        stop_installation_server()
+        log_manager.success("✅ First-time installation complete! Frontend now running on port 3100")
+    else:
+        log_callback("❌ Installation failed. Please check logs.", "error")
+        log_manager.error("❌ Auto-installation failed")
+
 def start_server(port=None):
     """Start the Flask server"""
     if port is None:
         port = find_available_port(5000)
     
-    print(f"""
+    # Check if this is first-time installation
+    if not agent.are_apps_installed():
+        print(f"""
+╔════════════════════════════════════════╗
+║   4Paws First-Time Installation       ║
+║   Please Wait...                      ║
+╚════════════════════════════════════════╝
+
+🚀 Apps not detected - starting auto-installation
+📦 User access: http://localhost:3100 (Installation Progress)
+🔧 Admin access: http://localhost:{port} (Maintenance GUI)
+
+This will take 5-10 minutes...
+Opening browser in 2 seconds...
+""")
+        
+        # Start installation server on port 3100
+        log_manager.info("🚀 Starting installation server on port 3100...")
+        start_installation_server(port=3100)
+        time.sleep(1)
+        
+        # Open browser to installation page
+        import webbrowser
+        log_manager.info("🌐 Opening browser to http://localhost:3100...")
+        time.sleep(1)
+        webbrowser.open("http://localhost:3100")
+        
+        # Start auto-installation in background thread
+        install_thread = threading.Thread(target=run_auto_install, daemon=True)
+        install_thread.start()
+        
+        log_manager.info("✅ Installation server started. User can access: http://localhost:3100")
+        log_manager.info(f"ℹ️  Maintenance GUI available at: http://localhost:{port}")
+    else:
+        print(f"""
 ╔════════════════════════════════════════╗
 ║   4Paws Agent Web GUI                 ║
 ║   Dashboard Server                    ║

@@ -1,0 +1,360 @@
+/* ============================================
+   Compact Styles for Dashboard
+   ============================================ */
+
+/* Compact Services Section */
+.services-section-compact {
+    background: var(--bg-card);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+}
+
+.services-section-compact h2 {
+    font-size: 20px;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+}
+
+.services-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 15px;
+}
+
+.service-card-compact {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: var(--bg-secondary);
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.service-card-compact:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: var(--accent-color);
+}
+
+.service-icon {
+    font-size: 32px;
+    min-width: 50px;
+    text-align: center;
+}
+
+.service-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.service-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.service-title h3 {
+    font-size: 16px;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.status-badge-mini {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge-mini.running {
+    background: var(--success);
+    color: white;
+}
+
+.status-badge-mini.stopped {
+    background: var(--danger);
+    color: white;
+}
+
+.service-url {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.service-url:hover {
+    text-decoration: underline;
+}
+
+.service-path {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.service-stats {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.service-stats strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.service-actions-mini {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.btn-mini {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+    min-width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-mini:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.btn-mini.btn-success {
+    background: var(--success);
+    color: white;
+}
+
+.btn-mini.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-mini.btn-info {
+    background: var(--info);
+    color: white;
+}
+
+.btn-mini.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+/* Real-Time Logs Section */
+.realtime-logs-section {
+    background: var(--bg-card);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+}
+
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.logs-header h2 {
+    font-size: 20px;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.logs-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.filter-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 150px;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.logs-terminal {
+    background: #1e1e1e;
+    border-radius: 8px;
+    padding: 15px;
+    min-height: 300px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #d4d4d4;
+}
+
+.logs-terminal.light {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.log-entry {
+    margin: 2px 0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.log-entry.info {
+    color: #4fc3f7;
+}
+
+.log-entry.success {
+    color: #81c784;
+}
+
+.log-entry.warning {
+    color: #ffb74d;
+}
+
+.log-entry.error {
+    color: #e57373;
+}
+
+.log-entry.action {
+    color: #ba68c8;
+    font-weight: bold;
+}
+
+.logs-terminal.light .log-entry.info {
+    color: #0288d1;
+}
+
+.logs-terminal.light .log-entry.success {
+    color: #388e3c;
+}
+
+.logs-terminal.light .log-entry.warning {
+    color: #f57c00;
+}
+
+.logs-terminal.light .log-entry.error {
+    color: #d32f2f;
+}
+
+.logs-terminal.light .log-entry.action {
+    color: #7b1fa2;
+}
+
+.log-timestamp {
+    color: #808080;
+    margin-right: 8px;
+}
+
+.log-action-tag {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 8px;
+    font-size: 11px;
+}
+
+/* Loading Spinner Inline */
+.loading-spinner-inline {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+    margin: 0 8px;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#terminal-loading {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .services-grid-compact {
+        grid-template-columns: 1fr;
+    }
+    
+    .service-card-compact {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .service-actions-mini {
+        flex-direction: row;
+        width: 100%;
+    }
+    
+    .logs-header {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .logs-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+

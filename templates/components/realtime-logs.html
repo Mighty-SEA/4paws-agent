@@ -1,0 +1,24 @@
+<!-- Real-Time Logs Component -->
+<div class="realtime-logs-section">
+    <div class="logs-header">
+        <h2>📋 Real-Time Operations Log</h2>
+        <div class="logs-controls">
+            <select id="actionFilter" class="filter-select" onchange="filterLogs()">
+                <option value="">All Actions</option>
+            </select>
+            <button class="btn-mini btn-secondary" onclick="toggleAutoScroll()" title="Toggle Auto-scroll">
+                <span id="autoScrollIcon">📌</span>
+            </button>
+            <button class="btn-mini btn-secondary" onclick="clearLogs()" title="Clear Logs">
+                🗑️
+            </button>
+        </div>
+    </div>
+    <div class="logs-terminal" id="logsTerminal">
+        <div class="log-entry info">
+            <span class="log-timestamp">[--:--:--]</span>
+            <span>🚀 Connecting to agent...</span>
+        </div>
+    </div>
+</div>
+

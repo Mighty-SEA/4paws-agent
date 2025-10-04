@@ -60,6 +60,8 @@ a = Analysis(
         ('static', 'static'),
         ('agent.py', '.'),
         ('gui_server.py', '.'),
+        ('installation_server.py', '.'),
+        ('shortcut_manager.py', '.'),
     ],
     hiddenimports=[
         'flask',
@@ -101,7 +103,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon path here if you have one
+    icon='static/img/favicon.ico',  # Application icon
 )
 """
     

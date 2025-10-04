@@ -1,0 +1,76 @@
+<!-- Compact Services Status Component -->
+<div class="services-section-compact">
+    <h2>🖥️ Services Status</h2>
+    <div class="services-grid-compact">
+        <!-- MariaDB -->
+        <div class="service-card-compact" id="mariadb-card-compact">
+            <div class="service-icon">🦋</div>
+            <div class="service-content">
+                <div class="service-title">
+                    <h3>MariaDB</h3>
+                    <span class="status-badge-mini" id="mariadb-status-mini">Stopped</span>
+                </div>
+                <div class="service-url">localhost:3307</div>
+                <div class="service-path" id="mariadb-path-compact">📁 Loading...</div>
+                <div class="service-stats">
+                    <span>PID: <strong id="mariadb-pid-compact">--</strong></span>
+                    <span>CPU: <strong id="mariadb-cpu-compact">--</strong></span>
+                    <span>MEM: <strong id="mariadb-memory-compact">--</strong></span>
+                </div>
+            </div>
+            <div class="service-actions-mini">
+                <button class="btn-mini btn-success" onclick="startService('mariadb')" title="Start">▶️</button>
+                <button class="btn-mini btn-danger" onclick="stopService('mariadb')" title="Stop">⏹️</button>
+            </div>
+        </div>
+
+        <!-- Backend -->
+        <div class="service-card-compact" id="backend-card-compact">
+            <div class="service-icon">🔧</div>
+            <div class="service-content">
+                <div class="service-title">
+                    <h3>Backend API</h3>
+                    <span class="status-badge-mini" id="backend-status-mini">Stopped</span>
+                </div>
+                <a href="http://localhost:3200" target="_blank" class="service-url">http://localhost:3200</a>
+                <div class="service-path" id="backend-path-compact">📁 Loading...</div>
+                <div class="service-stats">
+                    <span>v<strong id="backend-version-compact">--</strong></span>
+                    <span>PID: <strong id="backend-pid-compact">--</strong></span>
+                    <span>CPU: <strong id="backend-cpu-compact">--</strong></span>
+                    <span>MEM: <strong id="backend-memory-compact">--</strong></span>
+                </div>
+            </div>
+            <div class="service-actions-mini">
+                <button class="btn-mini btn-success" onclick="startService('backend')" title="Start">▶️</button>
+                <button class="btn-mini btn-danger" onclick="stopService('backend')" title="Stop">⏹️</button>
+                <button class="btn-mini btn-info" onclick="openBackend()" title="Open">🔗</button>
+            </div>
+        </div>
+
+        <!-- Frontend -->
+        <div class="service-card-compact" id="frontend-card-compact">
+            <div class="service-icon">🎨</div>
+            <div class="service-content">
+                <div class="service-title">
+                    <h3>Frontend</h3>
+                    <span class="status-badge-mini" id="frontend-status-mini">Stopped</span>
+                </div>
+                <a href="http://localhost:3100" target="_blank" class="service-url">http://localhost:3100</a>
+                <div class="service-path" id="frontend-path-compact">📁 Loading...</div>
+                <div class="service-stats">
+                    <span>v<strong id="frontend-version-compact">--</strong></span>
+                    <span>PID: <strong id="frontend-pid-compact">--</strong></span>
+                    <span>CPU: <strong id="frontend-cpu-compact">--</strong></span>
+                    <span>MEM: <strong id="frontend-memory-compact">--</strong></span>
+                </div>
+            </div>
+            <div class="service-actions-mini">
+                <button class="btn-mini btn-success" onclick="startService('frontend')" title="Start">▶️</button>
+                <button class="btn-mini btn-danger" onclick="stopService('frontend')" title="Stop">⏹️</button>
+                <button class="btn-mini btn-info" onclick="openFrontend()" title="Open">🔗</button>
+            </div>
+        </div>
+    </div>
+</div>
+

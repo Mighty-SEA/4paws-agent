@@ -1,297 +1,441 @@
-# 🤖 4Paws Deployment Agent
+# 🐾 4Paws Deployment Agent
 
-Auto-download, update, and manage 4Paws frontend & backend releases from GitHub with portable Node.js, pnpm, and MariaDB.
+**Automated deployment and management agent for 4Paws Pet Management System**
 
-## ✨ Features
+## 📋 Overview
 
-- 🔄 **Auto-update from GitHub Releases**
-- 📦 **Portable Node.js & pnpm** (no system installation)
-- 🦋 **Portable MariaDB** (no system installation, better than MySQL)
-- 🚀 **One-command start/stop** for all services
-- 📊 **Version tracking** and rollback support
-- 🔍 **Update checker** with smart notifications
-- 📝 **Auto-configuration** of .env files
-- 🌐 **Web GUI Dashboard** for monitoring and control
-- 🖥️ **System Tray Application** for quick access
-- 🔒 **Single Instance Lock** prevents multiple instances
+4Paws Agent adalah sistem manajemen otomatis untuk deploy dan mengelola aplikasi 4Paws Pet Management (frontend + backend). Agent ini menangani instalasi, update, database migrations, dan service management secara otomatis.
 
----
+## ✨ Key Features
 
-## 📋 Requirements
+### 🚀 First-Time Installation
+- **Otomatis download** aplikasi dari GitHub Releases
+- **Setup environment** (Node.js, pnpm, MariaDB portable)
+- **Database migration** dan seeding otomatis
+- **Browser auto-open** ke installation page
+- **Desktop & Start Menu shortcuts** otomatis dibuat
 
-- **Python 3.8+**
-- **Windows 10/11** (tested on Windows)
-- **Internet connection** (for downloading releases)
+### 🔄 Auto-Update System
+- **Check updates** dari GitHub Releases
+- **Frontend-triggered updates** dengan real-time progress
+- **Seamless update** tanpa "connection lost"
+- **Dedicated loading pages** selama update
+- **Auto-restart services** setelah update
 
----
+### 🎨 Web GUI (Port 5000)
+- **Real-time dashboard** untuk monitoring
+- **Service management** (start/stop/restart)
+- **Update management** dengan progress tracking
+- **Real-time logs viewer** seperti terminal
+- **Dark/Light mode** support
+
+### 🔔 System Tray Application
+- **Quick actions** untuk manage services
+- **Status indicators** (running/stopped/update available)
+- **Background running** tanpa console window
+- **One-click access** ke Web GUI
+
+### 📱 Shortcuts
+- **Desktop shortcut** untuk quick access
+- **Start Menu** integration
+- **Custom 4Paws icon**
+- **Direct link** ke frontend (port 3100)
 
 ## 🚀 Quick Start
 
-### 1. Install Python Dependencies
+### First-Time Installation
+
+1. **Run the agent:**
+   ```bash
+   python gui_server.py
+   # or
+   4PawsAgent.exe
+   ```
+
+2. **Browser opens automatically** ke http://localhost:3100
+
+3. **Installation page shows:**
+   - Download progress
+   - Installation steps
+   - Real-time logs
+   - Auto-refresh when done
+
+4. **Shortcuts created automatically:**
+   - Desktop: `4Paws Pet Management.url`
+   - Start Menu: `Programs → 4Paws → 4Paws Pet Management`
+
+5. **Done!** Access app via shortcuts or http://localhost:3100
+
+## 📦 Installation Methods
+
+### Method 1: Standalone Executable (Recommended)
 
 ```bash
+# Download 4PawsAgent.exe from releases
+# Double-click to run
+# Browser opens automatically
+```
+
+### Method 2: Python Script
+
+```bash
+# Clone repository
+git clone https://github.com/Mighty-SEA/4paws-agent.git
 cd 4paws-agent
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Run agent
+python gui_server.py
 ```
 
-### 2. Configure GitHub Token (Optional but Recommended)
-
-To avoid GitHub API rate limits (60 requests/hour without token), create a Personal Access Token:
-
-1. Go to: https://github.com/settings/tokens
-2. Click **"Generate new token"** → **"Classic"**
-3. Select scope: `public_repo` (read-only access)
-4. Copy the generated token
-5. Create `.env` file in `4paws-agent/`:
+### Method 3: System Tray App
 
 ```bash
-# Copy example file
-cp env.example .env
+# Run tray application
+python tray_app.py
 
-# Edit .env and add your token
-GITHUB_TOKEN=ghp_yourTokenHere123456789
+# Right-click system tray icon:
+# - Open Web GUI
+# - Start/Stop Services
+# - Check for Updates
+# - Exit
 ```
 
-**Benefits:**
-- ✅ Increases rate limit from 60 to 5,000 requests/hour
-- ✅ Prevents "rate limit exceeded" errors
-- ✅ Faster and more reliable update checks
+## 🎯 Usage
 
-### 3. Setup Portable Tools
+### Web GUI (Port 5000)
+
+Access dashboard at http://localhost:5000
+
+**Features:**
+- Service status monitoring
+- Start/Stop/Restart services
+- Check and install updates
+- View real-time logs
+- Database seeding
+- Environment configuration
+
+### CLI Commands
 
 ```bash
+# Setup tools (first time)
 python agent.py setup
-```
 
-This will guide you to:
-- Download **Node.js Portable** → Extract to `tools/node/`
-- Download **MariaDB Portable** → Extract to `tools/mariadb/`
-- pnpm will be auto-installed
-
-**Download Links:**
-- Node.js: https://nodejs.org/dist/ (get `node-v20.x.x-win-x64.zip`)
-- MariaDB: https://mariadb.org/download/ (get Windows 64-bit ZIP)
-
-### 4. Install Apps
-
-```bash
-# Install both frontend and backend
-python agent.py install all
-
-# Or install individually
-python agent.py install frontend
-python agent.py install backend
-```
-
-### 5. Start Services
-
-```bash
-python agent.py start
-```
-
-This will:
-1. ✅ Start MariaDB (port 3307)
-2. ✅ Start Backend API (port 3200)
-3. ✅ Start Frontend (port 3100)
-
-**Access the app:** http://localhost:3100
-
----
-
-## 📖 Usage
-
-### Check for Updates
-
-```bash
+# Check for updates
 python agent.py check
-```
 
-Output:
-```
-🔍 Checking for updates...
-✅ Frontend up to date: 0.0.1
-✅ Backend up to date: 0.0.1
-```
+# Install applications
+python agent.py install [frontend|backend|all]
 
-### Install Updates
+# Setup applications
+python agent.py setup-apps [frontend|backend|all]
 
-```bash
-# Check and install updates automatically
-python agent.py update
-```
+# Seed database
+python agent.py seed [all|services|pet-species|etc]
 
-### Stop Services
+# Start services
+python agent.py start [--skip-setup]
 
-```bash
+# Stop services
 python agent.py stop
+
+# Update applications
+python agent.py update [frontend|backend|all] [--yes]
+
+# Manage shortcuts
+python agent.py shortcuts create
+python agent.py shortcuts remove
+python agent.py shortcuts check
 ```
 
----
+### Update from Frontend
 
-## 📂 Directory Structure
+Click **Update button** in topbar (frontend app):
+- Shows update info modal
+- Displays real-time progress
+- Auto-restarts services
+- Seamless transition
+
+## 🏗️ Architecture
 
 ```
 4paws-agent/
-├── agent.py              # Main agent script
-├── requirements.txt      # Python dependencies
-├── versions.json         # Installed versions tracking
-├── agent.log             # Agent logs
+├── agent.py                    # Core agent logic
+├── gui_server.py              # Web GUI server (Flask + SocketIO)
+├── tray_app.py                # System tray application
+├── installation_server.py     # First-time installation server
+├── shortcut_manager.py        # Desktop/Start Menu shortcuts
+├── build-exe.py               # Build standalone .exe
+├── installer.nsi              # NSIS installer script
+├── requirements.txt           # Python dependencies
 │
-├── tools/                # Portable tools (not in git)
-│   ├── node/            # Node.js portable
-│   ├── pnpm/            # pnpm (auto-installed)
-│   └── mariadb/         # MariaDB portable
+├── apps/                      # Installed applications
+│   ├── frontend/             # Next.js frontend
+│   └── backend/              # NestJS backend
 │
-├── apps/                 # Installed apps (not in git)
-│   ├── frontend/        # 4Paws frontend
-│   └── backend/         # 4Paws backend
+├── tools/                     # Portable tools
+│   ├── node/                 # Node.js portable
+│   ├── pnpm/                 # pnpm package manager
+│   └── mariadb/              # MariaDB portable
 │
-├── data/                 # App data (not in git)
-│   └── mariadb/         # MariaDB database files
+├── templates/                 # Web GUI HTML templates
+│   ├── index.html
+│   └── components/           # Modular components
 │
-└── logs/                 # Service logs (not in git)
+├── static/                    # Static assets
+│   ├── css/                  # Stylesheets
+│   ├── js/                   # JavaScript
+│   └── img/                  # Images & icons
+│
+├── logs/                      # Application logs
+│   ├── agent.log
+│   ├── frontend.log
+│   ├── backend.log
+│   └── mariadb.log
+│
+└── docs/                      # Documentation (25+ guides)
+    ├── README.md             # Main docs index
+    ├── SETUP_GUIDE.md
+    ├── BUILD_GUIDE.md
+    └── ... (see docs folder)
 ```
 
----
+## 📚 Documentation
+
+Semua dokumentasi ada di folder `docs/`:
+
+### 🚀 Getting Started
+- [`SETUP_GUIDE.md`](docs/SETUP_GUIDE.md) - Initial setup guide
+- [`FIRST_TIME_INSTALLATION_GUIDE.md`](docs/FIRST_TIME_INSTALLATION_GUIDE.md) - Auto-installation system
+- [`GUI_GUIDE.md`](docs/GUI_GUIDE.md) - Web GUI usage
+
+### 🔄 Updates & Maintenance
+- [`UPDATE_FEATURE_INTEGRATION.md`](docs/UPDATE_FEATURE_INTEGRATION.md) - Update system overview
+- [`UPDATE_CHECK_OPTIMIZATION.md`](docs/UPDATE_CHECK_OPTIMIZATION.md) - Caching & optimization
+- [`UPDATE_INTEGRATION_GUIDE.md`](docs/UPDATE_INTEGRATION_GUIDE.md) - Frontend integration
+
+### 🎨 UI & UX
+- [`INSTALLATION_PAGE_UPDATE.md`](docs/INSTALLATION_PAGE_UPDATE.md) - Compact installation page
+- [`MODULAR_DASHBOARD_GUIDE.md`](docs/MODULAR_DASHBOARD_GUIDE.md) - Dashboard components
+- [`BRANDING_UPDATE.md`](docs/BRANDING_UPDATE.md) - Logo & branding
+- [`ICON_UPDATE.md`](docs/ICON_UPDATE.md) - Icon system
+- [`SHORTCUTS_FEATURE.md`](docs/SHORTCUTS_FEATURE.md) - Desktop shortcuts
+
+### 📝 Logs & Monitoring
+- [`LOG_SYSTEM_GUIDE.md`](docs/LOG_SYSTEM_GUIDE.md) - LogManager system
+- [`LOGGING_INTEGRATION.md`](docs/LOGGING_INTEGRATION.md) - Integration guide
+- [`CLEAN_LOGS_GUIDE.md`](docs/CLEAN_LOGS_GUIDE.md) - Clean log display
+- [`CHANGELOG_LOGS.md`](docs/CHANGELOG_LOGS.md) - Changelog
+
+### 🔧 Configuration
+- [`ENV_CONFIGURATION_GUIDE.md`](docs/ENV_CONFIGURATION_GUIDE.md) - Environment variables
+- [`ENV_FILES_EXPLAINED.md`](docs/ENV_FILES_EXPLAINED.md) - .env files guide
+- [`GITHUB_TOKEN_SETUP.md`](docs/GITHUB_TOKEN_SETUP.md) - GitHub API token
+
+### 🏗️ Build & Deploy
+- [`BUILD_GUIDE.md`](docs/BUILD_GUIDE.md) - Build standalone .exe
+- [`INSTALLER_GUIDE.md`](docs/INSTALLER_GUIDE.md) - Create installer
+- [`IMPLEMENTATION_SUMMARY.md`](docs/IMPLEMENTATION_SUMMARY.md) - Technical details
+
+### 📊 Summary & Overview
+- [`COMPACT_INSTALLATION_SUMMARY.md`](docs/COMPACT_INSTALLATION_SUMMARY.md) - Complete summary
+- [`INSTALLATION_PAGE_PREVIEW.md`](docs/INSTALLATION_PAGE_PREVIEW.md) - Preview & demo
+- [`DEMO_SCREENSHOTS.md`](docs/DEMO_SCREENSHOTS.md) - Visual guide
 
 ## 🔧 Configuration
 
-### App Ports (in `agent.py`)
+### Environment Variables
 
-```python
-FRONTEND_PORT = 3100
-BACKEND_PORT = 3200
-MARIADB_PORT = 3307  # Changed to avoid conflict with system MariaDB
+**Backend** (`.env`):
+```env
+DATABASE_URL="mysql://root:password@localhost:3307/4paws_db"
+JWT_SECRET="your-secret-key"
+PORT=3200
+NODE_ENV=production
 ```
 
-### MariaDB Credentials
-
-```python
-MARIADB_DB = "4paws_db"
-MARIADB_USER = "root"
-MARIADB_PASSWORD = "4paws_secure_password"
+**Frontend** (`.env.production`):
+```env
+BACKEND_API_URL=http://localhost:3200
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3200
+NEXT_PUBLIC_AGENT_URL=http://localhost:5000
+NODE_ENV=production
+PORT=3100
 ```
 
-### GitHub Repositories
+### Ports
 
-```python
-FRONTEND_REPO = "Mighty-SEA/4paws-frontend"
-BACKEND_REPO = "Mighty-SEA/4paws-backend"
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3100 | Next.js application |
+| Backend | 3200 | NestJS API |
+| MariaDB | 3307 | Database server |
+| Agent GUI | 5000 | Web dashboard |
+
+### GitHub Token
+
+For unlimited API access, set token:
+
+**File**: `4paws-agent/.env`
+```env
+GITHUB_TOKEN=ghp_your_token_here
 ```
 
----
+See [`docs/GITHUB_TOKEN_SETUP.md`](docs/GITHUB_TOKEN_SETUP.md) for details.
 
-## 🛠️ Commands Reference
+## 🧪 Development
 
-| Command | Description |
-|---------|-------------|
-| `python agent.py setup` | Setup portable tools (Node.js, pnpm, MariaDB) |
-| `python agent.py check` | Check for updates from GitHub |
-| `python agent.py install [component]` | Install frontend/backend/all |
-| `python agent.py start` | Start all services (MariaDB + Backend + Frontend) |
-| `python agent.py stop` | Stop all running services |
-| `python agent.py update` | Check and install updates automatically |
-
----
-
-## 📊 Version Tracking
-
-Installed versions are tracked in `versions.json`:
-
-```json
-{
-  "frontend": {
-    "version": "0.0.1",
-    "updated_at": "2025-10-03T22:54:00"
-  },
-  "backend": {
-    "version": "0.0.1",
-    "updated_at": "2025-10-03T22:54:00"
-  }
-}
-```
-
----
-
-## 🔍 Troubleshooting
-
-### "Node.js not found"
-
-1. Download Node.js portable: https://nodejs.org/dist/v20.11.0/node-v20.11.0-win-x64.zip
-2. Extract to `tools/node/`
-3. Verify `tools/node/node.exe` exists
-
-### "MariaDB not found"
-
-1. Download MariaDB ZIP: https://mariadb.org/download/
-2. Extract to `tools/mariadb/`
-3. Verify `tools/mariadb/bin/mysqld.exe` exists
-4. Run `python agent.py setup` again
-
-### "Port already in use"
-
-Check what's using the port:
+### Run in Development
 
 ```bash
-# Windows
+# Start Web GUI
+python gui_server.py
+
+# Start System Tray
+python tray_app.py
+
+# CLI commands
+python agent.py [command]
+```
+
+### Build Executable
+
+```bash
+# Build standalone .exe
+python build-exe.py
+
+# Output: dist/4PawsAgent.exe
+```
+
+### Create Installer
+
+```bash
+# Build installer (requires NSIS)
+makensis installer.nsi
+
+# Output: dist/4PawsSetup.exe
+```
+
+### Preview Installation Page
+
+```bash
+# Static preview
+python preview_installation.py
+
+# Demo simulation
+python demo_installation.py
+```
+
+## 📊 System Requirements
+
+### Minimum Requirements
+- **OS**: Windows 10 or higher
+- **RAM**: 4 GB
+- **Disk**: 2 GB free space
+- **Network**: Internet connection (for updates)
+
+### Recommended
+- **OS**: Windows 11
+- **RAM**: 8 GB
+- **Disk**: 5 GB free space
+- **Screen**: 1366×768 or higher
+
+## 🐛 Troubleshooting
+
+### Port Already in Use
+
+```bash
+# Find process using port
 netstat -ano | findstr :3100
-netstat -ano | findstr :3200
-netstat -ano | findstr :3307
 
-# Kill process by PID
-taskkill /PID <PID> /F
+# Kill process
+taskkill /PID [PID] /F
 ```
 
-### Check Logs
+### Services Not Starting
 
 ```bash
-# Agent log
-type agent.log
-
-# Service logs
-type logs\backend.log
+# Check logs
+type logs\agent.log
 type logs\frontend.log
-type logs\mariadb.log
+type logs\backend.log
+
+# Restart services
+python agent.py stop
+python agent.py start
 ```
 
----
+### Updates Not Working
 
-## 🔄 Update Workflow
+```bash
+# Clear update cache
+# Access Web GUI → Settings → Clear Cache
 
-The agent follows this update workflow:
+# Or manually:
+python agent.py check
+python agent.py update --yes
+```
 
-1. **Check GitHub** for latest releases
-2. **Compare** with installed versions
-3. **Download** new release ZIP
-4. **Backup** old version to `.backup/`
-5. **Extract** new version
-6. **Update** version tracking
-7. **Restart** services
+### Shortcuts Not Working
 
----
+```bash
+# Remove and recreate
+python agent.py shortcuts remove
+python agent.py shortcuts create
 
-## 🚨 Known Issues
+# Check shortcuts
+python agent.py shortcuts check
+```
 
-1. **Windows Firewall** may block Node.js - Allow when prompted
-2. **Antivirus** may flag portable tools - Add exception
-3. **First run** takes 2-5 minutes for dependency installation
+## 🤝 Contributing
 
----
+Contributions are welcome! Please:
 
-## 📧 Support
-
-For issues or questions, check:
-- Agent logs: `agent.log`
-- GitHub Issues: https://github.com/Mighty-SEA/4paws-frontend/issues
-
----
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
 
 ## 📄 License
 
-MIT License - See main repository for details
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 👥 Authors
+
+- **Mighty SEA Team** - *Initial work*
+
+## 🙏 Acknowledgments
+
+- Next.js team for amazing framework
+- NestJS team for robust backend
+- MariaDB for reliable database
+- Flask team for simple web framework
+
+## 📞 Support
+
+- **Issues**: https://github.com/Mighty-SEA/4paws-agent/issues
+- **Docs**: See `docs/` folder
+- **Email**: support@4paws.com
+
+## 🎉 Features Highlight
+
+✅ **Zero Configuration** - Works out of the box
+✅ **Portable** - No installation needed
+✅ **Auto-Update** - Always up to date
+✅ **Real-Time Monitoring** - Live dashboard
+✅ **One-Click Access** - Desktop shortcuts
+✅ **Professional UI** - Modern & clean
+✅ **Comprehensive Logs** - Full transparency
+✅ **System Tray** - Background operation
+✅ **Seamless Updates** - No downtime
+✅ **Multi-Platform** - Windows ready
 
 ---
 
-**Last Updated:** October 4, 2025  
-**Version:** 1.0.0
+**Made with ❤️ by Mighty SEA Team**
+
+🐾 **4Paws Pet Management System** - Making pet care management easy!
 

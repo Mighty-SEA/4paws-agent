@@ -1,0 +1,21 @@
+<!-- Header Component -->
+<header class="header">
+    <div class="header-left">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='img/4-PAWS-Petcare.png') }}" alt="4Paws Logo" class="header-logo">
+            <div class="header-title">
+                <h1>4Paws Agent Dashboard</h1>
+                <span class="version">v1.0</span>
+            </div>
+        </div>
+    </div>
+    <div class="header-right">
+        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+            <span class="theme-icon">🌙</span>
+        </button>
+        <button class="refresh-btn" onclick="refreshStatus()" title="Refresh Status">
+            🔄
+        </button>
+    </div>
+</header>
+

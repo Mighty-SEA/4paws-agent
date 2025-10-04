@@ -56,12 +56,72 @@ load_dotenv(BASE_DIR / '.env')
 
 # Setup logging to writable directory
 log_file = WRITABLE_DIR / 'agent.log'
+
+# Custom handler to send logs to LogManager if available
+class LogManagerHandler(logging.Handler):
+    """Handler that sends logs to LogManager for Web GUI"""
+    
+    def __init__(self):
+        super().__init__()
+        self._log_manager = None
+    
+    def set_log_manager(self, log_manager):
+        """Set the log manager instance"""
+        self._log_manager = log_manager
+    
+    def emit(self, record):
+        """Emit log to LogManager"""
+        if not self._log_manager:
+            return
+        
+        try:
+            msg = self.format(record)
+            
+            # Filter out Flask/Werkzeug HTTP access logs
+            # These are logged by werkzeug logger and contain patterns like:
+            # "127.0.0.1 - - [timestamp] "GET /api/..." or "POST /socket.io/..."
+            if '127.0.0.1 - -' in msg or 'GET /' in msg or 'POST /' in msg:
+                return  # Don't send HTTP access logs to Web GUI
+            
+            # Filter out SocketIO internal logs
+            if 'socket.io' in msg.lower() or 'websocket' in msg.lower():
+                return
+            
+            # Remove the timestamp prefix since LogManager adds its own
+            # Format: "2025-10-04 13:25:15,660 - INFO - message"
+            # We want just the message part
+            parts = msg.split(' - ', 2)
+            if len(parts) >= 3:
+                message = parts[2]  # Get the actual message
+            else:
+                message = msg
+            
+            # Map logging levels to LogManager levels
+            level_map = {
+                'INFO': 'info',
+                'WARNING': 'warning',
+                'ERROR': 'error',
+                'CRITICAL': 'error',
+                'DEBUG': 'info'
+            }
+            level = level_map.get(record.levelname, 'info')
+            
+            # Send to LogManager
+            self._log_manager.log(message, level=level)
+        except Exception:
+            pass  # Fail silently to not break the app
+
+# Create custom handler
+log_manager_handler = LogManagerHandler()
+log_manager_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file, encoding='utf-8'),
-        logging.StreamHandler()
+        logging.StreamHandler(),
+        log_manager_handler  # Add our custom handler
     ]
 )
 logger = logging.getLogger(__name__)
@@ -432,36 +492,54 @@ class AppManager:
     @staticmethod
     def setup_env(app_dir: Path, app_type: str):
         """Setup .env file for app"""
-        env_path = app_dir / ".env"
-        if env_path.exists():
-            logger.info(f"✅ .env already exists for {app_type}")
-            return
-        
-        env_example = app_dir / ".env.example"
-        if not env_example.exists():
-            logger.warning(f"⚠️  No .env.example found for {app_type}")
-            return
-        
-        logger.info(f"📝 Creating .env for {app_type}...")
-        
         if app_type == "backend":
+            # Backend uses .env
+            env_path = app_dir / ".env"
+            if env_path.exists():
+                logger.info(f"✅ .env already exists for {app_type}")
+                return
+            
+            logger.info(f"📝 Creating .env for {app_type}...")
+            
             # Backend .env with MariaDB connection
             env_content = f"""DATABASE_URL="mysql://{Config.MARIADB_USER}:{Config.MARIADB_PASSWORD}@localhost:{Config.MARIADB_PORT}/{Config.MARIADB_DB}"
 JWT_SECRET="4paws-jwt-secret-key-change-in-production"
 PORT={Config.BACKEND_PORT}
 NODE_ENV=production
 """
+            
+            with open(env_path, 'w') as f:
+                f.write(env_content)
+            
+            logger.info(f"✅ .env created for {app_type}")
+            
         else:
-            # Frontend .env
-            env_content = f"""NEXT_PUBLIC_API_URL=http://localhost:{Config.BACKEND_PORT}
-PORT={Config.FRONTEND_PORT}
+            # Frontend uses .env.production (for production build)
+            env_prod_path = app_dir / ".env.production"
+            
+            if env_prod_path.exists():
+                logger.info(f"✅ .env.production already exists for {app_type}")
+            else:
+                logger.info(f"📝 Creating .env.production for {app_type}...")
+                
+                # Frontend .env.production - Complete configuration for production builds
+                env_prod_content = f"""# Backend API Configuration
+BACKEND_API_URL=http://localhost:{Config.BACKEND_PORT}
+NEXT_PUBLIC_API_BASE_URL=http://localhost:{Config.BACKEND_PORT}
+
+# Agent API Configuration (for updates)
+NEXT_PUBLIC_AGENT_URL=http://localhost:5000
+
+# Server Configuration
 NODE_ENV=production
+PORT={Config.FRONTEND_PORT}
 """
-        
-        with open(env_path, 'w') as f:
-            f.write(env_content)
-        
-        logger.info(f"✅ .env created for {app_type}")
+                
+                with open(env_prod_path, 'w') as f:
+                    f.write(env_prod_content)
+                
+                logger.info(f"✅ .env.production created for {app_type}")
+                logger.info(f"💡 Tip: Create .env.local manually for local overrides (git-ignored)")
 
 
 class ProcessManager:
@@ -651,6 +729,114 @@ class Agent:
         # Create directories
         for dir_path in [Config.TOOLS_DIR, Config.APPS_DIR, Config.DATA_DIR, Config.LOGS_DIR]:
             dir_path.mkdir(parents=True, exist_ok=True)
+    
+    def are_apps_installed(self) -> bool:
+        """Check if both frontend and backend are installed"""
+        return Config.FRONTEND_DIR.exists() and Config.BACKEND_DIR.exists()
+    
+    def auto_install_and_setup(self, progress_callback=None, log_callback=None):
+        """
+        Perform first-time installation and setup
+        Used when apps are not installed yet
+        
+        Args:
+            progress_callback: Optional function(progress, step, status, title, description)
+                             to report progress (for installation server)
+            log_callback: Optional function(message, level) to send log messages
+        """
+        def log(msg, level='info'):
+            """Helper to log to both logger and callback"""
+            if level == 'info':
+                logger.info(msg)
+            elif level == 'error':
+                logger.error(msg)
+            elif level == 'warning':
+                logger.warning(msg)
+            
+            if log_callback:
+                log_callback(msg, level)
+        
+        log("🚀 Starting first-time installation...")
+        
+        try:
+            # Step 1: Download applications (0-40%)
+            if progress_callback:
+                progress_callback(0, 'download', 'active', 
+                                'Downloading Applications', 
+                                'Fetching latest releases from GitHub...')
+            
+            log("📥 Downloading frontend...")
+            if not self.download_and_install("frontend"):
+                log("❌ Failed to download frontend", 'error')
+                return False
+            
+            if progress_callback:
+                progress_callback(20, 'download', 'active')
+            
+            log("📥 Downloading backend...")
+            if not self.download_and_install("backend"):
+                log("❌ Failed to download backend", 'error')
+                return False
+            
+            if progress_callback:
+                progress_callback(40, 'download', 'completed')
+            
+            # Step 2: Install dependencies (40-60%)
+            if progress_callback:
+                progress_callback(40, 'install', 'active',
+                                'Installing Dependencies',
+                                'Setting up Node.js packages...')
+            
+            log("📦 Setting up applications...")
+            if not self.setup_apps():
+                log("❌ Failed to setup applications", 'error')
+                return False
+            
+            if progress_callback:
+                progress_callback(60, 'install', 'completed')
+            
+            # Step 3: Database is already done in setup_apps (60-80%)
+            if progress_callback:
+                progress_callback(80, 'database', 'completed',
+                                'Database Ready',
+                                'MariaDB configured and migrations complete')
+            
+            # Step 4: Start services (80-100%)
+            if progress_callback:
+                progress_callback(80, 'start', 'active',
+                                'Starting Services',
+                                'Launching frontend and backend...')
+            
+            log("🚀 Starting services...")
+            if not self.start_all(skip_setup=True):
+                log("❌ Failed to start services", 'error')
+                return False
+            
+            if progress_callback:
+                progress_callback(100, 'start', 'completed',
+                                '✨ Installation Complete!',
+                                'Your 4Paws system is ready to use')
+            
+            # Create desktop and start menu shortcuts
+            log("🔗 Creating shortcuts...")
+            try:
+                from shortcut_manager import ShortcutManager
+                results = ShortcutManager.create_frontend_shortcuts(port=Config.FRONTEND_PORT)
+                if results['desktop']:
+                    log("✅ Desktop shortcut created", 'success')
+                if results['start_menu']:
+                    log("✅ Start Menu shortcut created", 'success')
+            except Exception as e:
+                log(f"⚠️  Could not create shortcuts: {e}", 'warning')
+            
+            log("✅ First-time installation completed successfully!", 'success')
+            return True
+            
+        except Exception as e:
+            log(f"❌ Auto-install failed: {e}", 'error')
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
     
     def check_updates(self) -> Dict[str, Optional[str]]:
         """Check for updates on GitHub"""
@@ -1154,6 +1340,15 @@ class Agent:
             return False
 
 
+def set_agent_log_manager(log_manager):
+    """
+    Set LogManager for agent logging
+    This should be called from gui_server.py to enable web GUI logging
+    """
+    log_manager_handler.set_log_manager(log_manager)
+    logger.info("📋 Agent logging connected to Web GUI")
+
+
 def main():
     """Main entry point"""
     print("""
@@ -1176,11 +1371,15 @@ def main():
         print("  python agent.py start [--skip-setup]     - Start all services")
         print("  python agent.py stop                     - Stop all services")
         print("  python agent.py update [component] [-y]  - Update frontend/backend/all (with confirmation)")
+        print("  python agent.py shortcuts create         - Create desktop and start menu shortcuts")
+        print("  python agent.py shortcuts remove         - Remove shortcuts")
+        print("  python agent.py shortcuts check          - Check if shortcuts exist")
         print("\nExamples:")
         print("  python agent.py check                    - Check updates only")
         print("  python agent.py update                   - Update all (asks confirmation)")
         print("  python agent.py update frontend          - Update frontend only")
         print("  python agent.py update --yes             - Update all (no confirmation)")
+        print("  python agent.py shortcuts create         - Create shortcuts")
         return
     
     command = sys.argv[1].lower()
@@ -1289,6 +1488,59 @@ def main():
             print("\n💡 Next steps:")
             print("  1. Run: python agent.py setup-apps")
             print("  2. Run: python agent.py start")
+        
+        elif command == "shortcuts":
+            # Shortcuts management
+            from shortcut_manager import ShortcutManager
+            
+            if len(sys.argv) < 3:
+                print("\nUsage:")
+                print("  python agent.py shortcuts create  - Create shortcuts")
+                print("  python agent.py shortcuts remove  - Remove shortcuts")
+                print("  python agent.py shortcuts check   - Check if shortcuts exist")
+                return
+            
+            action = sys.argv[2].lower()
+            
+            if action == "create":
+                print("🔗 Creating shortcuts...")
+                results = ShortcutManager.create_frontend_shortcuts(port=Config.FRONTEND_PORT)
+                
+                if results['desktop'] and results['start_menu']:
+                    print("\n✅ All shortcuts created successfully!")
+                    print(f"  - Desktop: {ShortcutManager.get_desktop_path()}")
+                    print(f"  - Start Menu: {ShortcutManager.get_start_menu_path() / '4Paws'}")
+                elif results['desktop'] or results['start_menu']:
+                    print("\n⚠️  Some shortcuts created")
+                    if results['desktop']:
+                        print(f"  ✅ Desktop: {ShortcutManager.get_desktop_path()}")
+                    if results['start_menu']:
+                        print(f"  ✅ Start Menu: {ShortcutManager.get_start_menu_path() / '4Paws'}")
+                else:
+                    print("\n❌ Failed to create shortcuts")
+            
+            elif action == "remove":
+                print("🗑️  Removing shortcuts...")
+                removed = ShortcutManager.remove_frontend_shortcuts()
+                
+                if removed:
+                    print(f"\n✅ Removed shortcuts: {', '.join(removed)}")
+                else:
+                    print("\n❌ No shortcuts found to remove")
+            
+            elif action == "check":
+                print("🔍 Checking shortcuts...")
+                shortcuts = ShortcutManager.check_shortcuts_exist()
+                
+                print(f"\nDesktop: {'✅ Exists' if shortcuts['desktop'] else '❌ Not found'}")
+                print(f"Start Menu: {'✅ Exists' if shortcuts['start_menu'] else '❌ Not found'}")
+                
+                if shortcuts['desktop']:
+                    print(f"  📍 {ShortcutManager.get_desktop_path() / '4Paws Pet Management.url'}")
+                if shortcuts['start_menu']:
+                    print(f"  📍 {ShortcutManager.get_start_menu_path() / '4Paws' / '4Paws Pet Management.url'}")
+            else:
+                print(f"❌ Unknown shortcuts action: {action}")
         
         else:
             print(f"❌ Unknown command: {command}")
