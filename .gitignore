@@ -32,6 +32,7 @@ logs/
 versions.json
 *.zip
 *.tar.gz
+.env
 
 # Build artifacts
 build/

@@ -11,6 +11,9 @@ Auto-download, update, and manage 4Paws frontend & backend releases from GitHub 
 - 📊 **Version tracking** and rollback support
 - 🔍 **Update checker** with smart notifications
 - 📝 **Auto-configuration** of .env files
+- 🌐 **Web GUI Dashboard** for monitoring and control
+- 🖥️ **System Tray Application** for quick access
+- 🔒 **Single Instance Lock** prevents multiple instances
 
 ---
 
@@ -31,7 +34,30 @@ cd 4paws-agent
 pip install -r requirements.txt
 ```
 
-### 2. Setup Portable Tools
+### 2. Configure GitHub Token (Optional but Recommended)
+
+To avoid GitHub API rate limits (60 requests/hour without token), create a Personal Access Token:
+
+1. Go to: https://github.com/settings/tokens
+2. Click **"Generate new token"** → **"Classic"**
+3. Select scope: `public_repo` (read-only access)
+4. Copy the generated token
+5. Create `.env` file in `4paws-agent/`:
+
+```bash
+# Copy example file
+cp env.example .env
+
+# Edit .env and add your token
+GITHUB_TOKEN=ghp_yourTokenHere123456789
+```
+
+**Benefits:**
+- ✅ Increases rate limit from 60 to 5,000 requests/hour
+- ✅ Prevents "rate limit exceeded" errors
+- ✅ Faster and more reliable update checks
+
+### 3. Setup Portable Tools
 
 ```bash
 python agent.py setup
@@ -46,7 +72,7 @@ This will guide you to:
 - Node.js: https://nodejs.org/dist/ (get `node-v20.x.x-win-x64.zip`)
 - MariaDB: https://mariadb.org/download/ (get Windows 64-bit ZIP)
 
-### 3. Install Apps
+### 4. Install Apps
 
 ```bash
 # Install both frontend and backend
@@ -57,7 +83,7 @@ python agent.py install frontend
 python agent.py install backend
 ```
 
-### 4. Start Services
+### 5. Start Services
 
 ```bash
 python agent.py start

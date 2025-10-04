@@ -1,78 +1,105 @@
 // WebSocket connection
 const socket = io();
 
-// Theme Management
-function toggleTheme() {
-    const html = document.documentElement;
-    const currentTheme = html.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    html.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    
-    // Update icon
-    const icon = document.querySelector('.theme-icon');
-    icon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
-}
+// State
+let currentLogService = 'agent';
+let autoRefresh = true;
 
-// Load saved theme
-function loadTheme() {
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initializeTheme();
+    refreshStatus();
+    startAutoRefresh();
+    showLogs('agent');
+});
+
+// WebSocket events
+socket.on('connect', () => {
+    console.log('Connected to server');
+});
+
+socket.on('status_update', (data) => {
+    updateStatus(data);
+});
+
+// Theme Management
+function initializeTheme() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon();
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const newTheme = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeIcon();
+}
+
+function updateThemeIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
     const icon = document.querySelector('.theme-icon');
-    icon.textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+    icon.textContent = theme === 'dark' ? '☀️' : '🌙';
 }
 
-// Notification
-function showNotification(message, type = 'info') {
-    const notification = document.getElementById('notification');
-    notification.textContent = message;
-    notification.className = `notification show ${type}`;
-    
-    setTimeout(() => {
-        notification.classList.remove('show');
-    }, 3000);
-}
-
-// Refresh Status
+// Status Management
 async function refreshStatus() {
     try {
         const response = await fetch('/api/status');
         const data = await response.json();
-        updateUI(data);
+        updateStatus(data);
     } catch (error) {
-        showNotification('Failed to fetch status', 'error');
+        console.error('Error fetching status:', error);
     }
 }
 
-// Update UI with status data
-function updateUI(data) {
-    // Update system info
-    document.getElementById('cpu-usage').textContent = data.system.cpu.toFixed(1) + '%';
-    document.getElementById('memory-usage').textContent = data.system.memory.toFixed(1) + '%';
-    document.getElementById('disk-usage').textContent = data.system.disk.toFixed(1) + '%';
+function updateStatus(data) {
+    // Update system metrics
+    document.getElementById('cpu-usage').textContent = `${data.system.cpu.toFixed(1)}%`;
+    document.getElementById('memory-usage').textContent = `${data.system.memory.toFixed(1)}%`;
+    document.getElementById('disk-usage').textContent = `${data.system.disk.toFixed(1)}%`;
     
     // Update services
-    updateServiceCard('mariadb', data.mariadb, data.ports.mariadb, null);
-    updateServiceCard('backend', data.backend, data.ports.backend, data.versions.backend.version);
-    updateServiceCard('frontend', data.frontend, data.ports.frontend, data.versions.frontend.version);
+    updateServiceStatus('mariadb', data.mariadb, data.ports.mariadb);
+    updateServiceStatus('backend', data.backend, data.ports.backend, data.versions.backend);
+    updateServiceStatus('frontend', data.frontend, data.ports.frontend, data.versions.frontend);
+    
+    // Update paths
+    if (data.paths) {
+        document.getElementById('frontend-path').textContent = `📁 ${data.paths.frontend}`;
+        document.getElementById('backend-path').textContent = `📁 ${data.paths.backend}`;
+        document.getElementById('mariadb-path').textContent = `📁 ${data.paths.mariadb}`;
+        
+        // Update URL status based on service running state
+        document.getElementById('frontend-url-status').className = data.frontend.running ? 'url-status running' : 'url-status stopped';
+        document.getElementById('backend-url-status').className = data.backend.running ? 'url-status running' : 'url-status stopped';
+        document.getElementById('mariadb-url-status').className = data.mariadb.running ? 'url-status running' : 'url-status stopped';
+    }
 }
 
-// Update individual service card
-function updateServiceCard(service, status, port, version) {
+function updateServiceStatus(service, status, port, version = null) {
+    const card = document.getElementById(`${service}-card`);
     const statusBadge = document.getElementById(`${service}-status`);
     const pidElement = document.getElementById(`${service}-pid`);
-    const portElement = document.getElementById(`${service}-port`);
     const cpuElement = document.getElementById(`${service}-cpu`);
     const memoryElement = document.getElementById(`${service}-memory`);
+    const portElement = document.getElementById(`${service}-port`);
     
     if (status.running) {
-        statusBadge.className = 'status-badge running';
+        card.classList.add('service-running');
+        card.classList.remove('service-stopped');
+        statusBadge.textContent = 'Running';
+        statusBadge.className = 'status-badge status-running';
         pidElement.textContent = status.pid;
-        cpuElement.textContent = status.cpu.toFixed(1) + '%';
-        memoryElement.textContent = status.memory.toFixed(1) + ' MB';
+        cpuElement.textContent = `${status.cpu.toFixed(1)}%`;
+        memoryElement.textContent = `${status.memory.toFixed(1)} MB`;
     } else {
-        statusBadge.className = 'status-badge stopped';
-        pidElement.textContent = 'Not running';
+        card.classList.remove('service-running');
+        card.classList.add('service-stopped');
+        statusBadge.textContent = 'Stopped';
+        statusBadge.className = 'status-badge status-stopped';
+        pidElement.textContent = '--';
         cpuElement.textContent = '--';
         memoryElement.textContent = '--';
     }
@@ -82,30 +109,33 @@ function updateServiceCard(service, status, port, version) {
     if (version) {
         const versionElement = document.getElementById(`${service}-version`);
         if (versionElement) {
-            versionElement.textContent = version;
+            versionElement.textContent = version.version || '--';
         }
     }
 }
 
-// Start Service
+// Service Control
 async function startService(service) {
+    showLoading(`Starting ${service}...`);
     try {
         const response = await fetch(`/api/start/${service}`, { method: 'POST' });
         const data = await response.json();
         
         if (data.success) {
             showNotification(`${service} started successfully`, 'success');
-            setTimeout(refreshStatus, 1000);
+            setTimeout(refreshStatus, 2000);
         } else {
-            showNotification(`Failed to start ${service}: ${data.error}`, 'error');
+            showNotification(`Failed to start ${service}: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        showNotification(`Error starting ${service}`, 'error');
+        showNotification(`Error starting ${service}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
     }
 }
 
-// Stop Service
 async function stopService(service) {
+    showLoading(`Stopping ${service}...`);
     try {
         const response = await fetch(`/api/stop/${service}`, { method: 'POST' });
         const data = await response.json();
@@ -114,126 +144,288 @@ async function stopService(service) {
             showNotification(`${service} stopped successfully`, 'success');
             setTimeout(refreshStatus, 1000);
         } else {
-            showNotification(`Failed to stop ${service}: ${data.error}`, 'error');
+            showNotification(`Failed to stop ${service}: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        showNotification(`Error stopping ${service}`, 'error');
+        showNotification(`Error stopping ${service}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
     }
 }
 
-// Start All
 async function startAll() {
-    showNotification('Starting all services...', 'info');
     await startService('all');
 }
 
-// Stop All
 async function stopAll() {
-    showNotification('Stopping all services...', 'info');
+    if (!confirm('Are you sure you want to stop all services?')) {
+        return;
+    }
     await stopService('all');
 }
 
-// View Logs
-async function viewLogs(service) {
-    const modal = document.getElementById('logs-modal');
-    const title = document.getElementById('logs-title');
-    const content = document.getElementById('logs-content');
-    
-    title.textContent = `${service.toUpperCase()} Logs`;
-    content.textContent = 'Loading logs...';
-    modal.classList.add('show');
+// Install Apps
+async function installApp(component) {
+    closeModal('installModal');
+    showLoading(`Installing ${component}... This may take a few minutes.`);
     
     try {
-        const response = await fetch(`/api/logs/${service}`);
+        const response = await fetch(`/api/install/${component}`, { method: 'POST' });
         const data = await response.json();
         
-        if (data.logs) {
-            content.textContent = data.logs || 'No logs available';
+        if (data.success) {
+            showNotification(`${component} installed successfully!`, 'success');
+            setTimeout(refreshStatus, 2000);
         } else {
-            content.textContent = 'Error loading logs: ' + data.error;
+            showNotification(`Failed to install ${component}: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        content.textContent = 'Error loading logs';
+        showNotification(`Error installing ${component}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
     }
 }
 
-// Close Logs Modal
-function closeLogs() {
-    document.getElementById('logs-modal').classList.remove('show');
+// Setup Apps
+async function setupApp(component) {
+    closeModal('setupModal');
+    showLoading(`Setting up ${component}... Installing dependencies and running migrations.`);
+    
+    try {
+        const response = await fetch(`/api/setup/${component}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`${component} setup completed successfully!`, 'success');
+            setTimeout(refreshStatus, 2000);
+        } else {
+            showNotification(`Failed to setup ${component}: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error setting up ${component}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
-// Check Updates
+// Seed Database
+async function seedDatabase(type) {
+    closeModal('seedModal');
+    showLoading(`Seeding database with ${type} data...`);
+    
+    try {
+        const response = await fetch('/api/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`Database seeded with ${type} successfully!`, 'success');
+        } else {
+            showNotification(`Failed to seed database: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error seeding database: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Updates
 async function checkUpdates() {
-    const modal = document.getElementById('updates-modal');
-    const content = document.getElementById('updates-content');
-    
-    content.textContent = 'Checking for updates...';
-    modal.classList.add('show');
-    
+    showLoading('Checking for updates...');
     try {
         const response = await fetch('/api/updates');
         const data = await response.json();
         
-        if (data.updates && Object.keys(data.updates).length > 0) {
-            let html = '<div style="padding: 20px;">';
-            html += '<h4 style="margin-bottom: 15px;">🆕 Updates Available:</h4>';
-            
-            for (const [component, version] of Object.entries(data.updates)) {
-                html += `<div style="padding: 10px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 10px;">`;
-                html += `<strong>${component}:</strong> Update to ${version}`;
-                html += `</div>`;
-            }
-            
-            html += '<p style="margin-top: 15px; color: var(--text-secondary);">Run <code>python agent.py update</code> to install updates.</p>';
-            html += '</div>';
-            content.innerHTML = html;
+        if (data.updates && (data.updates.frontend || data.updates.backend)) {
+            displayUpdates(data.updates);
         } else {
-            content.innerHTML = '<div style="padding: 20px; text-align: center;">✅ All services are up to date!</div>';
+            showNotification('No updates available. Everything is up to date!', 'info');
         }
     } catch (error) {
-        content.textContent = 'Error checking updates: ' + error;
+        showNotification(`Error checking updates: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
     }
 }
 
-// Close Updates Modal
-function closeUpdates() {
-    document.getElementById('updates-modal').classList.remove('show');
+function displayUpdates(updates) {
+    const section = document.getElementById('updates-section');
+    const content = document.getElementById('updates-content');
+    
+    let html = '<div class="updates-list">';
+    
+    if (updates.frontend) {
+        html += `
+            <div class="update-card">
+                <h3>🎨 Frontend Update Available</h3>
+                <p>Current: ${updates.frontend.current || 'Not installed'}</p>
+                <p>Latest: ${updates.frontend.latest}</p>
+                <button class="btn btn-primary" onclick="updateComponent('frontend')">Update Frontend</button>
+            </div>
+        `;
+    }
+    
+    if (updates.backend) {
+        html += `
+            <div class="update-card">
+                <h3>🔧 Backend Update Available</h3>
+                <p>Current: ${updates.backend.current || 'Not installed'}</p>
+                <p>Latest: ${updates.backend.latest}</p>
+                <button class="btn btn-primary" onclick="updateComponent('backend')">Update Backend</button>
+            </div>
+        `;
+    }
+    
+    html += `
+        <div class="update-card">
+            <h3>📦 Update All</h3>
+            <button class="btn btn-success" onclick="updateComponent('all')">Update Everything</button>
+        </div>
+    </div>`;
+    
+    content.innerHTML = html;
+    section.style.display = 'block';
 }
 
-// Open Frontend App
-function openApp() {
+async function updateComponent(component) {
+    if (!confirm(`Are you sure you want to update ${component}? Services will be restarted.`)) {
+        return;
+    }
+    
+    showLoading(`Updating ${component}... This may take a few minutes.`);
+    
+    try {
+        const response = await fetch(`/api/update/${component}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: true })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`${component} updated successfully!`, 'success');
+            document.getElementById('updates-section').style.display = 'none';
+            setTimeout(refreshStatus, 2000);
+        } else {
+            showNotification(`Failed to update ${component}: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showNotification(`Error updating ${component}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Logs
+async function showLogs(service) {
+    currentLogService = service;
+    
+    // Update tab active state
+    document.querySelectorAll('.log-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // Fetch logs
+    try {
+        const response = await fetch(`/api/logs/${service}`);
+        const data = await response.json();
+        document.getElementById('logs-output').textContent = data.logs || 'No logs available';
+        
+        // Auto-scroll to bottom
+        const logsOutput = document.getElementById('logs-output');
+        logsOutput.scrollTop = logsOutput.scrollHeight;
+    } catch (error) {
+        document.getElementById('logs-output').textContent = `Error loading logs: ${error.message}`;
+    }
+}
+
+// Modal Management
+function showInstallModal() {
+    document.getElementById('installModal').style.display = 'flex';
+}
+
+function showSetupModal() {
+    document.getElementById('setupModal').style.display = 'flex';
+}
+
+function showSeedModal() {
+    document.getElementById('seedModal').style.display = 'flex';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+// Click outside modal to close
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.style.display = 'none';
+    }
+}
+
+// Loading Overlay
+function showLoading(text = 'Processing...') {
+    document.getElementById('loadingText').textContent = text;
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// Notifications
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    
+    // Add to body
+    document.body.appendChild(notification);
+    
+    // Show with animation
+    setTimeout(() => notification.classList.add('show'), 10);
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 5000);
+}
+
+// Auto Refresh
+function startAutoRefresh() {
+    setInterval(() => {
+        if (autoRefresh) {
+            refreshStatus();
+            if (currentLogService) {
+                // Refresh logs silently
+                fetch(`/api/logs/${currentLogService}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        const output = document.getElementById('logs-output');
+                        const wasAtBottom = output.scrollHeight - output.scrollTop === output.clientHeight;
+                        output.textContent = data.logs || 'No logs available';
+                        if (wasAtBottom) {
+                            output.scrollTop = output.scrollHeight;
+                        }
+                    })
+                    .catch(() => {});
+            }
+        }
+    }, 3000); // Refresh every 3 seconds
+}
+
+// External Links
+function openFrontend() {
     window.open('http://localhost:3100', '_blank');
 }
 
-// WebSocket event handlers
-socket.on('connect', () => {
-    console.log('Connected to server');
-    refreshStatus();
-});
-
-socket.on('status_update', (data) => {
-    updateUI(data);
-});
-
-// Close modals on outside click
-window.onclick = function(event) {
-    const logsModal = document.getElementById('logs-modal');
-    const updatesModal = document.getElementById('updates-modal');
-    
-    if (event.target === logsModal) {
-        closeLogs();
-    }
-    if (event.target === updatesModal) {
-        closeUpdates();
-    }
+function openBackend() {
+    window.open('http://localhost:3200', '_blank');
 }
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    loadTheme();
-    refreshStatus();
-    
-    // Auto-refresh every 5 seconds
-    setInterval(refreshStatus, 5000);
-});
-

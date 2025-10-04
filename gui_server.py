@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 
 # Add agent.py to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -19,6 +20,16 @@ from agent import Agent, ProcessManager, Config, VersionManager
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '4paws-agent-secret'
+
+# Enable CORS for all routes
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:3100", "http://localhost:3200"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global agent instance
@@ -72,6 +83,12 @@ def api_status():
             'backend': Config.BACKEND_PORT,
             'frontend': Config.FRONTEND_PORT
         },
+        'paths': {
+            'frontend': str(Config.FRONTEND_DIR.absolute()) if Config.FRONTEND_DIR.exists() else 'Not installed',
+            'backend': str(Config.BACKEND_DIR.absolute()) if Config.BACKEND_DIR.exists() else 'Not installed',
+            'mariadb': str(Config.MARIADB_DIR.absolute()) if Config.MARIADB_DIR.exists() else 'Not installed',
+            'data': str(Config.DATA_DIR.absolute())
+        },
         'system': {
             'cpu': psutil.cpu_percent(),
             'memory': psutil.virtual_memory().percent,
@@ -84,7 +101,8 @@ def api_start(service):
     """Start a service"""
     try:
         if service == 'all':
-            success = agent.start_all(skip_setup=True)
+            # Don't skip setup - let auto-detect handle it
+            success = agent.start_all(skip_setup=False)
         elif service == 'mariadb':
             success = ProcessManager.start_mariadb()
         elif service == 'backend':
@@ -139,6 +157,284 @@ def api_logs(service):
             return jsonify({'logs': ''.join(lines[-100:])})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/install/<component>', methods=['POST'])
+def api_install(component):
+    """Install frontend/backend/all"""
+    try:
+        success = agent.install_apps(component)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/update/<component>', methods=['POST'])
+def api_update(component):
+    """Update frontend/backend/all"""
+    try:
+        # Get force flag from request
+        data = request.get_json() or {}
+        force = data.get('force', False)
+        
+        if component == 'all':
+            success = agent.update_apps('all', force=force)
+        else:
+            success = agent.update_apps(component, force=force)
+        
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/setup/<component>', methods=['POST'])
+def api_setup(component):
+    """Setup apps (install dependencies, migrate, etc)"""
+    try:
+        success = agent.setup_apps(component)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/seed', methods=['POST'])
+def api_seed():
+    """Seed database"""
+    try:
+        data = request.get_json() or {}
+        seed_type = data.get('type', 'all')
+        
+        success = agent.seed_database(seed_type)
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/check-tools')
+def api_check_tools():
+    """Check if portable tools are installed"""
+    try:
+        tools_status = {
+            'node': (Config.NODE_DIR / 'node.exe').exists(),
+            'pnpm': (Config.PNPM_DIR / 'pnpm.cmd').exists(),
+            'mariadb': (Config.MARIADB_DIR / 'bin' / 'mysqld.exe').exists()
+        }
+        
+        apps_status = {
+            'frontend': Config.FRONTEND_DIR.exists(),
+            'backend': Config.BACKEND_DIR.exists()
+        }
+        
+        return jsonify({
+            'tools': tools_status,
+            'apps': apps_status,
+            'all_tools_ready': all(tools_status.values()),
+            'all_apps_installed': all(apps_status.values())
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/check')
+def api_update_check():
+    """Check for updates (for application integration)"""
+    try:
+        versions = VersionManager.load_versions()
+        updates = agent.check_updates()
+        
+        return jsonify({
+            'current': {
+                'frontend': versions['frontend']['version'],
+                'backend': versions['backend']['version']
+            },
+            'latest': updates if updates else {},
+            'has_update': bool(updates),
+            'details': {
+                'frontend': {
+                    'current': versions['frontend']['version'],
+                    'latest': updates.get('frontend') if updates else None,
+                    'has_update': 'frontend' in updates if updates else False
+                },
+                'backend': {
+                    'current': versions['backend']['version'],
+                    'latest': updates.get('backend') if updates else None,
+                    'has_update': 'backend' in updates if updates else False
+                }
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/start', methods=['POST'])
+def api_update_start():
+    """Start update process (non-blocking with WebSocket notifications)"""
+    try:
+        data = request.get_json() or {}
+        component = data.get('component', 'all')
+        
+        # Start update in background thread
+        import threading
+        thread = threading.Thread(
+            target=perform_update_with_notifications,
+            args=(component,),
+            daemon=True
+        )
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Update started',
+            'websocket_channel': 'update_progress'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def start_loading_server(port=3100, page='update_loading.html'):
+    """Start simple HTTP server for update loading page"""
+    import http.server
+    import socketserver
+    import threading
+    
+    class LoadingHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, loading_page=page, **kwargs):
+            self.loading_page = loading_page
+            super().__init__(*args, **kwargs)
+            
+        def do_GET(self):
+            if self.path == '/' or self.path == '/index.html':
+                # Serve loading page
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                
+                loading_file = Path(__file__).parent / self.loading_page
+                with open(loading_file, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                super().do_GET()
+        
+        def log_message(self, format, *args):
+            pass  # Suppress logs
+    
+    try:
+        # Create handler factory with loading_page parameter
+        handler = lambda *args, **kwargs: LoadingHandler(*args, loading_page=page, **kwargs)
+        server = socketserver.TCPServer(("", port), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server
+    except Exception as e:
+        print(f"Failed to start loading server on port {port}: {e}")
+        return None
+
+def perform_update_with_notifications(component):
+    """Background update with WebSocket notifications"""
+    try:
+        import time
+        
+        # Step 1: Stopping services and starting loading pages
+        socketio.emit('update_status', {
+            'status': 'stopping_services',
+            'message': 'Stopping services...',
+            'progress': 10
+        })
+        
+        # Stop all services
+        ProcessManager.stop_all()
+        time.sleep(2)
+        
+        # Start loading servers on both ports
+        frontend_loading_server = start_loading_server(port=3100, page='update_loading.html')
+        backend_loading_server = start_loading_server(port=3200, page='update_loading_backend.html')
+        time.sleep(1)
+        
+        # Step 2: Downloading
+        socketio.emit('update_status', {
+            'status': 'downloading',
+            'message': 'Downloading updates from GitHub...',
+            'progress': 30
+        })
+        time.sleep(1)
+        
+        # Step 3: Install updates
+        socketio.emit('update_status', {
+            'status': 'extracting',
+            'message': 'Extracting and installing updates...',
+            'progress': 50
+        })
+        
+        success = agent.update_apps(component, force=True)
+        
+        if not success:
+            socketio.emit('update_status', {
+                'status': 'failed',
+                'message': 'Update failed! Please check logs.',
+                'progress': 0
+            })
+            return
+        
+        # Step 4: Setup apps (install dependencies & migrations)
+        socketio.emit('update_status', {
+            'status': 'setup',
+            'message': 'Installing dependencies and running migrations...',
+            'progress': 70
+        })
+        
+        # Run setup for updated components
+        if not agent.setup_apps(component):
+            socketio.emit('update_status', {
+                'status': 'failed',
+                'message': 'Setup failed! Please check logs.',
+                'progress': 0
+            })
+            return
+        
+        # Step 5: Shutdown loading servers and restart services
+        socketio.emit('update_status', {
+            'status': 'restarting',
+            'message': 'Starting services...',
+            'progress': 90
+        })
+        
+        # Shutdown loading servers
+        if frontend_loading_server:
+            frontend_loading_server.shutdown()
+            frontend_loading_server.server_close()
+        
+        if backend_loading_server:
+            backend_loading_server.shutdown()
+            backend_loading_server.server_close()
+        
+        time.sleep(2)
+        
+        # Start services (skip setup since we just did it)
+        agent.start_all(skip_setup=True)
+        
+        # Wait for services to start
+        time.sleep(5)
+        
+        # Step 6: Completed
+        socketio.emit('update_status', {
+            'status': 'completed',
+            'message': 'Update completed successfully!',
+            'progress': 100
+        })
+        
+    except Exception as e:
+        # Cleanup loading servers on error
+        try:
+            if 'frontend_loading_server' in locals() and frontend_loading_server:
+                frontend_loading_server.shutdown()
+                frontend_loading_server.server_close()
+        except:
+            pass
+        
+        try:
+            if 'backend_loading_server' in locals() and backend_loading_server:
+                backend_loading_server.shutdown()
+                backend_loading_server.server_close()
+        except:
+            pass
+            
+        socketio.emit('update_status', {
+            'status': 'failed',
+            'message': f'Update failed: {str(e)}',
+            'progress': 0
+        })
 
 @socketio.on('connect')
 def handle_connect():

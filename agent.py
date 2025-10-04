@@ -17,20 +17,56 @@ from pathlib import Path
 from typing import Optional, Dict, List
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
 
-# Setup logging with UTF-8 encoding
+# Determine base directory
+# If running from Program Files (installer), use AppData for writable files
+def get_base_dir():
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable
+        base = Path(sys.executable).parent
+    else:
+        # Running as script
+        base = Path(__file__).parent.absolute()
+    
+    # Check if we're in Program Files (read-only location)
+    base_str = str(base).lower()
+    if 'program files' in base_str or 'programdata' in base_str:
+        # Use installation directory for tools/apps, but AppData for logs/data
+        return base
+    return base
+
+BASE_DIR = get_base_dir()
+
+# Determine writable directory for logs and transient data
+def get_writable_dir():
+    base_str = str(BASE_DIR).lower()
+    if 'program files' in base_str or 'programdata' in base_str:
+        # Use AppData\Local for writable files
+        appdata = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
+        writable = appdata / '4PawsAgent'
+        writable.mkdir(parents=True, exist_ok=True)
+        return writable
+    return BASE_DIR
+
+WRITABLE_DIR = get_writable_dir()
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / '.env')
+
+# Setup logging to writable directory
+log_file = WRITABLE_DIR / 'agent.log'
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('agent.log', encoding='utf-8'),
+        logging.FileHandler(log_file, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 # Set console output to UTF-8 for emoji support
-import sys
 if sys.platform == 'win32':
     try:
         sys.stdout.reconfigure(encoding='utf-8')
@@ -47,11 +83,12 @@ class Config:
     GITHUB_API = "https://api.github.com/repos"
     
     # Local directories
-    BASE_DIR = Path(__file__).parent.absolute()
+    BASE_DIR = BASE_DIR
+    WRITABLE_DIR = WRITABLE_DIR
     TOOLS_DIR = BASE_DIR / "tools"
     APPS_DIR = BASE_DIR / "apps"
     DATA_DIR = BASE_DIR / "data"
-    LOGS_DIR = BASE_DIR / "logs"
+    LOGS_DIR = WRITABLE_DIR / "logs"  # Use writable dir for logs
     
     # Tool directories
     NODE_DIR = TOOLS_DIR / "node"
@@ -62,8 +99,8 @@ class Config:
     FRONTEND_DIR = APPS_DIR / "frontend"
     BACKEND_DIR = APPS_DIR / "backend"
     
-    # Version tracking
-    VERSION_FILE = BASE_DIR / "versions.json"
+    # Version tracking (use writable dir)
+    VERSION_FILE = WRITABLE_DIR / "versions.json"
     
     # MariaDB config
     MARIADB_PORT = 3307  # Changed to 3307 to avoid conflict with existing MariaDB
@@ -82,13 +119,19 @@ class GitHubClient:
     def __init__(self, repo: str):
         self.repo = repo
         self.api_url = f"{Config.GITHUB_API}/{repo}"
+        # Get GitHub token from environment if available
+        self.token = os.getenv('GITHUB_TOKEN', '')
+        self.headers = {}
+        if self.token:
+            self.headers['Authorization'] = f'token {self.token}'
+            logger.info("🔑 Using GitHub token for API requests")
     
     def get_latest_release(self) -> Optional[Dict]:
         """Get latest release info from GitHub"""
         try:
             url = f"{self.api_url}/releases/latest"
             logger.info(f"🔍 Checking latest release for {self.repo}...")
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, headers=self.headers, timeout=10)
             response.raise_for_status()
             data = response.json()
             
@@ -114,7 +157,7 @@ class GitHubClient:
         """Download release asset"""
         try:
             logger.info(f"📥 Downloading from {url}...")
-            response = requests.get(url, stream=True, timeout=30)
+            response = requests.get(url, headers=self.headers, stream=True, timeout=30)
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -616,27 +659,39 @@ class Agent:
         versions = VersionManager.load_versions()
         updates = {}
         
+        # Check if apps are installed
+        frontend_installed = Config.FRONTEND_DIR.exists()
+        backend_installed = Config.BACKEND_DIR.exists()
+        
         # Check frontend
         frontend_release = self.frontend_client.get_latest_release()
         if frontend_release:
-            current = versions['frontend']['version']
             latest = frontend_release['tag_name']
-            if current != latest:
+            if not frontend_installed:
                 updates['frontend'] = latest
-                logger.info(f"🆕 Frontend update available: {current} → {latest}")
+                logger.info(f"📦 Frontend not installed. Latest version available: {latest}")
             else:
-                logger.info(f"✅ Frontend up to date: {current}")
+                current = versions['frontend']['version']
+                if current != latest:
+                    updates['frontend'] = latest
+                    logger.info(f"🆕 Frontend update available: {current} → {latest}")
+                else:
+                    logger.info(f"✅ Frontend up to date: {current}")
         
         # Check backend
         backend_release = self.backend_client.get_latest_release()
         if backend_release:
-            current = versions['backend']['version']
             latest = backend_release['tag_name']
-            if current != latest:
+            if not backend_installed:
                 updates['backend'] = latest
-                logger.info(f"🆕 Backend update available: {current} → {latest}")
+                logger.info(f"📦 Backend not installed. Latest version available: {latest}")
             else:
-                logger.info(f"✅ Backend up to date: {current}")
+                current = versions['backend']['version']
+                if current != latest:
+                    updates['backend'] = latest
+                    logger.info(f"🆕 Backend update available: {current} → {latest}")
+                else:
+                    logger.info(f"✅ Backend up to date: {current}")
         
         return updates
     
@@ -1046,6 +1101,56 @@ class Agent:
             logger.error(f"❌ Seeding failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return False
+    
+    def install_apps(self, component: str = "all") -> bool:
+        """Install applications from GitHub releases"""
+        try:
+            if component == "all":
+                logger.info("📦 Installing both frontend and backend...")
+                frontend_ok = self.download_and_install("frontend")
+                backend_ok = self.download_and_install("backend")
+                return frontend_ok and backend_ok
+            else:
+                return self.download_and_install(component)
+        except Exception as e:
+            logger.error(f"❌ Installation failed: {e}")
+            return False
+    
+    def update_apps(self, component: str = "all", force: bool = False) -> bool:
+        """Update applications"""
+        try:
+            # Check for updates first
+            updates = self.check_updates()
+            
+            if not force and not updates:
+                logger.info("✅ Everything is up to date!")
+                return True
+            
+            # Stop services before updating
+            logger.info("⏹️  Stopping services for update...")
+            ProcessManager.stop_all()
+            
+            # Install updates
+            if component == "all":
+                success = True
+                if 'frontend' in updates or force:
+                    logger.info("📥 Updating frontend...")
+                    success = self.download_and_install("frontend") and success
+                if 'backend' in updates or force:
+                    logger.info("📥 Updating backend...")
+                    success = self.download_and_install("backend") and success
+                return success
+            else:
+                if component in updates or force:
+                    logger.info(f"📥 Updating {component}...")
+                    return self.download_and_install(component)
+                else:
+                    logger.info(f"✅ {component} is already up to date!")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"❌ Update failed: {e}")
             return False
 
 

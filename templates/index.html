@@ -40,108 +40,259 @@
             </div>
         </div>
 
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <button class="btn btn-success" onclick="startAll()">▶️ Start All</button>
-            <button class="btn btn-danger" onclick="stopAll()">⏹️ Stop All</button>
-            <button class="btn btn-info" onclick="checkUpdates()">🔄 Check Updates</button>
-        </div>
-
-        <!-- Services Grid -->
-        <div class="services-grid">
-            <!-- MariaDB Service -->
-            <div class="service-card" id="mariadb-card">
-                <div class="service-header">
-                    <h3>🗄️ MariaDB</h3>
-                    <span class="status-badge" id="mariadb-status">●</span>
+        <!-- Application URLs -->
+        <div class="app-urls">
+            <h2>🌐 Application URLs</h2>
+            <div class="url-grid">
+                <div class="url-card">
+                    <div class="url-icon">🎨</div>
+                    <div class="url-content">
+                        <div class="url-label">Frontend</div>
+                        <a href="http://localhost:3100" target="_blank" class="url-link">
+                            http://localhost:3100
+                        </a>
+                        <div class="url-path" id="frontend-path">📁 Loading...</div>
+                        <div class="url-status" id="frontend-url-status">●</div>
+                    </div>
                 </div>
-                <div class="service-info">
-                    <div><strong>PID:</strong> <span id="mariadb-pid">--</span></div>
-                    <div><strong>Port:</strong> <span id="mariadb-port">--</span></div>
-                    <div><strong>CPU:</strong> <span id="mariadb-cpu">--</span></div>
-                    <div><strong>Memory:</strong> <span id="mariadb-memory">--</span></div>
+                <div class="url-card">
+                    <div class="url-icon">🔧</div>
+                    <div class="url-content">
+                        <div class="url-label">Backend API</div>
+                        <a href="http://localhost:3200" target="_blank" class="url-link">
+                            http://localhost:3200
+                        </a>
+                        <div class="url-path" id="backend-path">📁 Loading...</div>
+                        <div class="url-status" id="backend-url-status">●</div>
+                    </div>
                 </div>
-                <div class="service-actions">
-                    <button class="btn btn-sm btn-success" onclick="startService('mariadb')">Start</button>
-                    <button class="btn btn-sm btn-danger" onclick="stopService('mariadb')">Stop</button>
-                    <button class="btn btn-sm btn-info" onclick="viewLogs('mariadb')">Logs</button>
-                </div>
-            </div>
-
-            <!-- Backend Service -->
-            <div class="service-card" id="backend-card">
-                <div class="service-header">
-                    <h3>🔧 Backend</h3>
-                    <span class="status-badge" id="backend-status">●</span>
-                </div>
-                <div class="service-info">
-                    <div><strong>PID:</strong> <span id="backend-pid">--</span></div>
-                    <div><strong>Port:</strong> <span id="backend-port">--</span></div>
-                    <div><strong>CPU:</strong> <span id="backend-cpu">--</span></div>
-                    <div><strong>Memory:</strong> <span id="backend-memory">--</span></div>
-                    <div><strong>Version:</strong> <span id="backend-version">--</span></div>
-                </div>
-                <div class="service-actions">
-                    <button class="btn btn-sm btn-success" onclick="startService('backend')">Start</button>
-                    <button class="btn btn-sm btn-danger" onclick="stopService('backend')">Stop</button>
-                    <button class="btn btn-sm btn-info" onclick="viewLogs('backend')">Logs</button>
-                </div>
-            </div>
-
-            <!-- Frontend Service -->
-            <div class="service-card" id="frontend-card">
-                <div class="service-header">
-                    <h3>🎨 Frontend</h3>
-                    <span class="status-badge" id="frontend-status">●</span>
-                </div>
-                <div class="service-info">
-                    <div><strong>PID:</strong> <span id="frontend-pid">--</span></div>
-                    <div><strong>Port:</strong> <span id="frontend-port">--</span></div>
-                    <div><strong>CPU:</strong> <span id="frontend-cpu">--</span></div>
-                    <div><strong>Memory:</strong> <span id="frontend-memory">--</span></div>
-                    <div><strong>Version:</strong> <span id="frontend-version">--</span></div>
-                </div>
-                <div class="service-actions">
-                    <button class="btn btn-sm btn-success" onclick="startService('frontend')">Start</button>
-                    <button class="btn btn-sm btn-danger" onclick="stopService('frontend')">Stop</button>
-                    <button class="btn btn-sm btn-info" onclick="viewLogs('frontend')">Logs</button>
-                    <button class="btn btn-sm btn-primary" onclick="openApp()">Open</button>
+                <div class="url-card">
+                    <div class="url-icon">🦋</div>
+                    <div class="url-content">
+                        <div class="url-label">Database</div>
+                        <div class="url-link">
+                            localhost:3307
+                        </div>
+                        <div class="url-path" id="mariadb-path">📁 Loading...</div>
+                        <div class="url-status" id="mariadb-url-status">●</div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Logs Modal -->
-        <div class="modal" id="logs-modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 id="logs-title">Service Logs</h3>
-                    <button class="close-btn" onclick="closeLogs()">×</button>
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <h2>⚡ Quick Actions</h2>
+            <div class="action-grid">
+                <button class="action-btn btn-success" onclick="startAll()">
+                    <span class="action-icon">▶️</span>
+                    <span class="action-text">Start All</span>
+                </button>
+                <button class="action-btn btn-danger" onclick="stopAll()">
+                    <span class="action-icon">⏹️</span>
+                    <span class="action-text">Stop All</span>
+                </button>
+                <button class="action-btn btn-info" onclick="checkUpdates()">
+                    <span class="action-icon">🔄</span>
+                    <span class="action-text">Check Updates</span>
+                </button>
+                <button class="action-btn btn-warning" onclick="showSetupModal()">
+                    <span class="action-icon">⚙️</span>
+                    <span class="action-text">Setup Apps</span>
+                </button>
+                <button class="action-btn btn-primary" onclick="showInstallModal()">
+                    <span class="action-icon">📦</span>
+                    <span class="action-text">Install Apps</span>
+                </button>
+                <button class="action-btn btn-secondary" onclick="showSeedModal()">
+                    <span class="action-icon">🌱</span>
+                    <span class="action-text">Seed Database</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Services Status -->
+        <div class="services-section">
+            <h2>🖥️ Services Status</h2>
+            <div class="services-grid">
+                <!-- MariaDB -->
+                <div class="service-card" id="mariadb-card">
+                    <div class="service-header">
+                        <h3>🦋 MariaDB</h3>
+                        <span class="status-badge" id="mariadb-status">Stopped</span>
+                    </div>
+                    <div class="service-info">
+                        <div class="info-row">
+                            <span>Port:</span>
+                            <span id="mariadb-port">3307</span>
+                        </div>
+                        <div class="info-row">
+                            <span>PID:</span>
+                            <span id="mariadb-pid">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>CPU:</span>
+                            <span id="mariadb-cpu">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Memory:</span>
+                            <span id="mariadb-memory">--</span>
+                        </div>
+                    </div>
+                    <div class="service-actions">
+                        <button class="btn btn-sm btn-success" onclick="startService('mariadb')">Start</button>
+                        <button class="btn btn-sm btn-danger" onclick="stopService('mariadb')">Stop</button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <pre id="logs-content">Loading logs...</pre>
+
+                <!-- Backend -->
+                <div class="service-card" id="backend-card">
+                    <div class="service-header">
+                        <h3>🔧 Backend API</h3>
+                        <span class="status-badge" id="backend-status">Stopped</span>
+                    </div>
+                    <div class="service-info">
+                        <div class="info-row">
+                            <span>Port:</span>
+                            <span id="backend-port">3200</span>
+                        </div>
+                        <div class="info-row">
+                            <span>PID:</span>
+                            <span id="backend-pid">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>CPU:</span>
+                            <span id="backend-cpu">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Memory:</span>
+                            <span id="backend-memory">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Version:</span>
+                            <span id="backend-version">--</span>
+                        </div>
+                    </div>
+                    <div class="service-actions">
+                        <button class="btn btn-sm btn-success" onclick="startService('backend')">Start</button>
+                        <button class="btn btn-sm btn-danger" onclick="stopService('backend')">Stop</button>
+                        <button class="btn btn-sm btn-info" onclick="openBackend()">Open</button>
+                    </div>
+                </div>
+
+                <!-- Frontend -->
+                <div class="service-card" id="frontend-card">
+                    <div class="service-header">
+                        <h3>🎨 Frontend</h3>
+                        <span class="status-badge" id="frontend-status">Stopped</span>
+                    </div>
+                    <div class="service-info">
+                        <div class="info-row">
+                            <span>Port:</span>
+                            <span id="frontend-port">3100</span>
+                        </div>
+                        <div class="info-row">
+                            <span>PID:</span>
+                            <span id="frontend-pid">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>CPU:</span>
+                            <span id="frontend-cpu">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Memory:</span>
+                            <span id="frontend-memory">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Version:</span>
+                            <span id="frontend-version">--</span>
+                        </div>
+                    </div>
+                    <div class="service-actions">
+                        <button class="btn btn-sm btn-success" onclick="startService('frontend')">Start</button>
+                        <button class="btn btn-sm btn-danger" onclick="stopService('frontend')">Stop</button>
+                        <button class="btn btn-sm btn-info" onclick="openFrontend()">Open</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Updates Modal -->
-        <div class="modal" id="updates-modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Available Updates</h3>
-                    <button class="close-btn" onclick="closeUpdates()">×</button>
-                </div>
-                <div class="modal-body" id="updates-content">
-                    Checking for updates...
-                </div>
-            </div>
+        <!-- Updates Section -->
+        <div class="updates-section" id="updates-section" style="display: none;">
+            <h2>📥 Available Updates</h2>
+            <div id="updates-content"></div>
         </div>
 
-        <!-- Notification -->
-        <div class="notification" id="notification"></div>
+        <!-- Logs Section -->
+        <div class="logs-section">
+            <h2>📝 Logs</h2>
+            <div class="logs-tabs">
+                <button class="log-tab active" onclick="showLogs('agent')">Agent</button>
+                <button class="log-tab" onclick="showLogs('backend')">Backend</button>
+                <button class="log-tab" onclick="showLogs('frontend')">Frontend</button>
+                <button class="log-tab" onclick="showLogs('mariadb')">MariaDB</button>
+            </div>
+            <div class="logs-content">
+                <pre id="logs-output"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Install Modal -->
+    <div id="installModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('installModal')">&times;</span>
+            <h2>📦 Install Applications</h2>
+            <p>Download and install applications from GitHub releases</p>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="installApp('all')">Install Both</button>
+                <button class="btn btn-primary" onclick="installApp('frontend')">Frontend Only</button>
+                <button class="btn btn-primary" onclick="installApp('backend')">Backend Only</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div id="setupModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('setupModal')">&times;</span>
+            <h2>⚙️ Setup Applications</h2>
+            <p>Install dependencies, run migrations, and prepare applications</p>
+            <div class="modal-buttons">
+                <button class="btn btn-warning" onclick="setupApp('all')">Setup Both</button>
+                <button class="btn btn-warning" onclick="setupApp('frontend')">Frontend Only</button>
+                <button class="btn btn-warning" onclick="setupApp('backend')">Backend Only</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Seed Modal -->
+    <div id="seedModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('seedModal')">&times;</span>
+            <h2>🌱 Seed Database</h2>
+            <p>Populate database with sample data</p>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="seedDatabase('all')">Seed All</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('users')">Users</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('services')">Services</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('store-settings')">Store Settings</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('pet-species')">Pet Species</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('owners-pets')">Owners & Pets</button>
+                <button class="btn btn-secondary" onclick="seedDatabase('products-mix')">Products</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p id="loadingText">Processing...</p>
+        </div>
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
-
