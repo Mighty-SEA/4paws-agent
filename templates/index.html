@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4Paws Agent Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>🐾 4Paws Agent Dashboard</h1>
+                <span class="version">v1.0</span>
+            </div>
+            <div class="header-right">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <button class="refresh-btn" onclick="refreshStatus()" title="Refresh Status">
+                    🔄
+                </button>
+            </div>
+        </header>
+
+        <!-- System Info -->
+        <div class="system-info">
+            <div class="info-card">
+                <div class="info-label">CPU</div>
+                <div class="info-value" id="cpu-usage">--</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Memory</div>
+                <div class="info-value" id="memory-usage">--</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Disk</div>
+                <div class="info-value" id="disk-usage">--</div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <button class="btn btn-success" onclick="startAll()">▶️ Start All</button>
+            <button class="btn btn-danger" onclick="stopAll()">⏹️ Stop All</button>
+            <button class="btn btn-info" onclick="checkUpdates()">🔄 Check Updates</button>
+        </div>
+
+        <!-- Services Grid -->
+        <div class="services-grid">
+            <!-- MariaDB Service -->
+            <div class="service-card" id="mariadb-card">
+                <div class="service-header">
+                    <h3>🗄️ MariaDB</h3>
+                    <span class="status-badge" id="mariadb-status">●</span>
+                </div>
+                <div class="service-info">
+                    <div><strong>PID:</strong> <span id="mariadb-pid">--</span></div>
+                    <div><strong>Port:</strong> <span id="mariadb-port">--</span></div>
+                    <div><strong>CPU:</strong> <span id="mariadb-cpu">--</span></div>
+                    <div><strong>Memory:</strong> <span id="mariadb-memory">--</span></div>
+                </div>
+                <div class="service-actions">
+                    <button class="btn btn-sm btn-success" onclick="startService('mariadb')">Start</button>
+                    <button class="btn btn-sm btn-danger" onclick="stopService('mariadb')">Stop</button>
+                    <button class="btn btn-sm btn-info" onclick="viewLogs('mariadb')">Logs</button>
+                </div>
+            </div>
+
+            <!-- Backend Service -->
+            <div class="service-card" id="backend-card">
+                <div class="service-header">
+                    <h3>🔧 Backend</h3>
+                    <span class="status-badge" id="backend-status">●</span>
+                </div>
+                <div class="service-info">
+                    <div><strong>PID:</strong> <span id="backend-pid">--</span></div>
+                    <div><strong>Port:</strong> <span id="backend-port">--</span></div>
+                    <div><strong>CPU:</strong> <span id="backend-cpu">--</span></div>
+                    <div><strong>Memory:</strong> <span id="backend-memory">--</span></div>
+                    <div><strong>Version:</strong> <span id="backend-version">--</span></div>
+                </div>
+                <div class="service-actions">
+                    <button class="btn btn-sm btn-success" onclick="startService('backend')">Start</button>
+                    <button class="btn btn-sm btn-danger" onclick="stopService('backend')">Stop</button>
+                    <button class="btn btn-sm btn-info" onclick="viewLogs('backend')">Logs</button>
+                </div>
+            </div>
+
+            <!-- Frontend Service -->
+            <div class="service-card" id="frontend-card">
+                <div class="service-header">
+                    <h3>🎨 Frontend</h3>
+                    <span class="status-badge" id="frontend-status">●</span>
+                </div>
+                <div class="service-info">
+                    <div><strong>PID:</strong> <span id="frontend-pid">--</span></div>
+                    <div><strong>Port:</strong> <span id="frontend-port">--</span></div>
+                    <div><strong>CPU:</strong> <span id="frontend-cpu">--</span></div>
+                    <div><strong>Memory:</strong> <span id="frontend-memory">--</span></div>
+                    <div><strong>Version:</strong> <span id="frontend-version">--</span></div>
+                </div>
+                <div class="service-actions">
+                    <button class="btn btn-sm btn-success" onclick="startService('frontend')">Start</button>
+                    <button class="btn btn-sm btn-danger" onclick="stopService('frontend')">Stop</button>
+                    <button class="btn btn-sm btn-info" onclick="viewLogs('frontend')">Logs</button>
+                    <button class="btn btn-sm btn-primary" onclick="openApp()">Open</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Modal -->
+        <div class="modal" id="logs-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="logs-title">Service Logs</h3>
+                    <button class="close-btn" onclick="closeLogs()">×</button>
+                </div>
+                <div class="modal-body">
+                    <pre id="logs-content">Loading logs...</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Updates Modal -->
+        <div class="modal" id="updates-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Available Updates</h3>
+                    <button class="close-btn" onclick="closeUpdates()">×</button>
+                </div>
+                <div class="modal-body" id="updates-content">
+                    Checking for updates...
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification -->
+        <div class="notification" id="notification"></div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+

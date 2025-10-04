@@ -33,6 +33,12 @@ versions.json
 *.zip
 *.tar.gz
 
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+
 # IDE
 .vscode/
 .idea/
