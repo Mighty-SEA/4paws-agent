@@ -19,158 +19,15 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Determine base directory
-# If running from Program Files (installer), use AppData for writable files
-def get_base_dir():
-    if getattr(sys, 'frozen', False):
-        # Running as compiled executable
-        base = Path(sys.executable).parent
-    else:
-        # Running as script
-        base = Path(__file__).parent.absolute()
-    
-    # Check if we're in Program Files (read-only location)
-    base_str = str(base).lower()
-    if 'program files' in base_str or 'programdata' in base_str:
-        # Use installation directory for tools/apps, but AppData for logs/data
-        return base
-    return base
-
-BASE_DIR = get_base_dir()
-
-# Determine writable directory for logs and transient data
-def get_writable_dir():
-    base_str = str(BASE_DIR).lower()
-    if 'program files' in base_str or 'programdata' in base_str:
-        # Use AppData\Local for writable files
-        appdata = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
-        writable = appdata / '4PawsAgent'
-        writable.mkdir(parents=True, exist_ok=True)
-        return writable
-    return BASE_DIR
-
-WRITABLE_DIR = get_writable_dir()
+# Import core modules
+from core import Config, setup_logging, get_log_manager_handler
 
 # Load environment variables from .env file
-load_dotenv(BASE_DIR / '.env')
+load_dotenv(Config.BASE_DIR / '.env')
 
 # Setup logging to writable directory
-log_file = WRITABLE_DIR / 'agent.log'
-
-# Custom handler to send logs to LogManager if available
-class LogManagerHandler(logging.Handler):
-    """Handler that sends logs to LogManager for Web GUI"""
-    
-    def __init__(self):
-        super().__init__()
-        self._log_manager = None
-    
-    def set_log_manager(self, log_manager):
-        """Set the log manager instance"""
-        self._log_manager = log_manager
-    
-    def emit(self, record):
-        """Emit log to LogManager"""
-        if not self._log_manager:
-            return
-        
-        try:
-            msg = self.format(record)
-            
-            # Filter out Flask/Werkzeug HTTP access logs
-            # These are logged by werkzeug logger and contain patterns like:
-            # "127.0.0.1 - - [timestamp] "GET /api/..." or "POST /socket.io/..."
-            if '127.0.0.1 - -' in msg or 'GET /' in msg or 'POST /' in msg:
-                return  # Don't send HTTP access logs to Web GUI
-            
-            # Filter out SocketIO internal logs
-            if 'socket.io' in msg.lower() or 'websocket' in msg.lower():
-                return
-            
-            # Remove the timestamp prefix since LogManager adds its own
-            # Format: "2025-10-04 13:25:15,660 - INFO - message"
-            # We want just the message part
-            parts = msg.split(' - ', 2)
-            if len(parts) >= 3:
-                message = parts[2]  # Get the actual message
-            else:
-                message = msg
-            
-            # Map logging levels to LogManager levels
-            level_map = {
-                'INFO': 'info',
-                'WARNING': 'warning',
-                'ERROR': 'error',
-                'CRITICAL': 'error',
-                'DEBUG': 'info'
-            }
-            level = level_map.get(record.levelname, 'info')
-            
-            # Send to LogManager
-            self._log_manager.log(message, level=level)
-        except Exception:
-            pass  # Fail silently to not break the app
-
-# Create custom handler
-log_manager_handler = LogManagerHandler()
-log_manager_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file, encoding='utf-8'),
-        logging.StreamHandler(),
-        log_manager_handler  # Add our custom handler
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Set console output to UTF-8 for emoji support
-if sys.platform == 'win32':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except:
-        pass
-
-
-class Config:
-    """Agent configuration"""
-    # GitHub repositories
-    FRONTEND_REPO = "Mighty-SEA/4paws-frontend"
-    BACKEND_REPO = "Mighty-SEA/4paws-backend"
-    GITHUB_API = "https://api.github.com/repos"
-    
-    # Local directories
-    BASE_DIR = BASE_DIR
-    WRITABLE_DIR = WRITABLE_DIR
-    TOOLS_DIR = BASE_DIR / "tools"
-    APPS_DIR = BASE_DIR / "apps"
-    DATA_DIR = BASE_DIR / "data"
-    LOGS_DIR = WRITABLE_DIR / "logs"  # Use writable dir for logs
-    
-    # Tool directories
-    NODE_DIR = TOOLS_DIR / "node"
-    PNPM_DIR = TOOLS_DIR / "pnpm"
-    MARIADB_DIR = TOOLS_DIR / "mariadb"
-    
-    # App directories
-    FRONTEND_DIR = APPS_DIR / "frontend"
-    BACKEND_DIR = APPS_DIR / "backend"
-    
-    # Version tracking (use writable dir)
-    VERSION_FILE = WRITABLE_DIR / "versions.json"
-    
-    # MariaDB config
-    MARIADB_PORT = 3307  # Changed to 3307 to avoid conflict with existing MariaDB
-    MARIADB_DB = "4paws_db"
-    MARIADB_USER = "root"
-    MARIADB_PASSWORD = "4paws_secure_password"
-    
-    # App ports
-    FRONTEND_PORT = 3100
-    BACKEND_PORT = 3200
+log_file = Config.WRITABLE_DIR / 'agent.log'
+logger, log_manager_handler = setup_logging(log_file)
 
 
 class GitHubClient:
@@ -186,63 +43,158 @@ class GitHubClient:
             self.headers['Authorization'] = f'token {self.token}'
             logger.info("🔑 Using GitHub token for API requests")
     
-    def get_latest_release(self) -> Optional[Dict]:
-        """Get latest release info from GitHub"""
-        try:
-            url = f"{self.api_url}/releases/latest"
-            logger.info(f"🔍 Checking latest release for {self.repo}...")
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            return {
-                'tag_name': data['tag_name'],
-                'name': data['name'],
-                'published_at': data['published_at'],
-                'assets': [
-                    {
-                        'name': asset['name'],
-                        'download_url': asset['browser_download_url'],
-                        'size': asset['size']
-                    }
-                    for asset in data['assets']
-                    if asset['name'].endswith('.zip')
-                ]
-            }
-        except requests.RequestException as e:
-            logger.error(f"❌ Failed to fetch release info: {e}")
-            return None
+    def get_latest_release(self, max_retries: int = 3) -> Optional[Dict]:
+        """Get latest release info from GitHub with retry logic"""
+        import time
+        
+        url = f"{self.api_url}/releases/latest"
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt == 1:
+                    logger.info(f"🔍 Checking latest release for {self.repo}...")
+                else:
+                    logger.info(f"🔄 Retry attempt {attempt}/{max_retries} for {self.repo}...")
+                
+                response = requests.get(url, headers=self.headers, timeout=15)
+                response.raise_for_status()
+                data = response.json()
+                
+                return {
+                    'tag_name': data['tag_name'],
+                    'name': data['name'],
+                    'published_at': data['published_at'],
+                    'assets': [
+                        {
+                            'name': asset['name'],
+                            'download_url': asset['browser_download_url'],
+                            'size': asset['size']
+                        }
+                        for asset in data['assets']
+                        if asset['name'].endswith('.zip')
+                    ]
+                }
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt  # Exponential backoff: 2, 4, 8 seconds
+                    logger.warning(f"⚠️  Network error (attempt {attempt}/{max_retries}): {str(e)[:100]}")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed after {max_retries} attempts: Network connection error")
+                    logger.error(f"💡 Check your internet connection or try again later")
+                    return None
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"⚠️  Request timeout (attempt {attempt}/{max_retries})")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed after {max_retries} attempts: Request timeout")
+                    logger.error(f"💡 GitHub API might be slow, try again later")
+                    return None
+            except requests.exceptions.HTTPError as e:
+                # Don't retry on HTTP errors (404, 403, etc) - these won't fix with retry
+                logger.error(f"❌ HTTP Error: {e}")
+                if e.response.status_code == 403:
+                    logger.error(f"💡 Rate limit exceeded. Use GITHUB_TOKEN or wait 1 hour")
+                return None
+            except requests.RequestException as e:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"⚠️  Request failed (attempt {attempt}/{max_retries}): {str(e)[:100]}")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed after {max_retries} attempts: {e}")
+                    return None
+        
+        return None
     
-    def download_asset(self, url: str, output_path: Path) -> bool:
-        """Download release asset"""
-        try:
-            logger.info(f"📥 Downloading from {url}...")
-            response = requests.get(url, headers=self.headers, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-            
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(output_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Progress
-                        if total_size > 0:
-                            progress = (downloaded / total_size) * 100
-                            print(f"\r  Progress: {progress:.1f}% ({downloaded}/{total_size} bytes)", end='')
-            
-            print()  # New line after progress
-            logger.info(f"✅ Downloaded to {output_path}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Download failed: {e}")
-            return False
+    def download_asset(self, url: str, output_path: Path, max_retries: int = 3) -> bool:
+        """Download release asset with retry logic"""
+        import time
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt == 1:
+                    logger.info(f"📥 Downloading from {url}...")
+                else:
+                    logger.info(f"🔄 Download retry attempt {attempt}/{max_retries}...")
+                
+                response = requests.get(url, headers=self.headers, stream=True, timeout=60)
+                response.raise_for_status()
+                
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Download with progress
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            
+                            # Progress
+                            if total_size > 0:
+                                progress = (downloaded / total_size) * 100
+                                print(f"\r  Progress: {progress:.1f}% ({downloaded}/{total_size} bytes)", end='')
+                
+                print()  # New line after progress
+                
+                # Verify download completed
+                if total_size > 0 and downloaded < total_size:
+                    raise Exception(f"Incomplete download: {downloaded}/{total_size} bytes")
+                
+                logger.info(f"✅ Downloaded to {output_path}")
+                return True
+                
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < max_retries:
+                    wait_time = 3 ** attempt  # 3, 9, 27 seconds
+                    logger.warning(f"⚠️  Download failed (attempt {attempt}/{max_retries}): {str(e)[:100]}")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    
+                    # Clean up partial download
+                    if output_path.exists():
+                        try:
+                            output_path.unlink()
+                        except:
+                            pass
+                    
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Download failed after {max_retries} attempts")
+                    logger.error(f"💡 Check your internet connection and try again")
+                    return False
+                    
+            except requests.exceptions.HTTPError as e:
+                # Don't retry on HTTP errors
+                logger.error(f"❌ Download failed: HTTP {e.response.status_code}")
+                return False
+                
+            except Exception as e:
+                if attempt < max_retries:
+                    wait_time = 3 ** attempt
+                    logger.warning(f"⚠️  Download error (attempt {attempt}/{max_retries}): {str(e)[:100]}")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    
+                    # Clean up partial download
+                    if output_path.exists():
+                        try:
+                            output_path.unlink()
+                        except:
+                            pass
+                    
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Download failed after {max_retries} attempts: {e}")
+                    return False
+        
+        return False
 
 
 class VersionManager:
@@ -280,9 +232,58 @@ class ToolsManager:
     """Manage portable Node.js, pnpm, and MariaDB"""
     
     @staticmethod
+    def get_node_path():
+        """Get the actual Node.js path, trying multiple locations"""
+        possible_paths = [
+            Config.NODE_DIR,  # Standard path
+            Config.TOOLS_DIR / "node-v22.20.0-win-x64",  # Versioned folder
+            Config.TOOLS_DIR / "node",  # Direct node folder
+        ]
+        
+        for path in possible_paths:
+            if (path / "node.exe").exists():
+                return path
+        
+        return Config.NODE_DIR  # Fallback to default
+    
+    @staticmethod
+    def get_mariadb_path():
+        """Get the actual MariaDB path, trying multiple locations"""
+        possible_paths = [
+            Config.MARIADB_DIR,  # Standard path
+            Config.TOOLS_DIR / "mariadb-12.0.2-winx64",  # Versioned folder
+            Config.TOOLS_DIR / "mariadb",  # Direct mariadb folder
+        ]
+        
+        for path in possible_paths:
+            if (path / "bin" / "mysqld.exe").exists():
+                return path
+        
+        return Config.MARIADB_DIR  # Fallback to default
+    
+    @staticmethod
+    def get_pnpm_path():
+        """Get the actual pnpm path, trying multiple locations"""
+        # Try to find pnpm in Node.js global modules
+        node_path = ToolsManager.get_node_path()
+        possible_paths = [
+            Config.PNPM_DIR,  # Standard path
+            node_path / "node_modules" / "pnpm" / "bin",  # Global install
+            node_path / "node_modules" / ".bin",  # npm global bin
+        ]
+        
+        for path in possible_paths:
+            if (path / "pnpm.exe").exists():
+                return path
+        
+        return Config.PNPM_DIR  # Fallback to default
+    
+    @staticmethod
     def setup_nodejs() -> bool:
         """Setup portable Node.js"""
-        node_exe = Config.NODE_DIR / "node.exe"
+        node_path = ToolsManager.get_node_path()
+        node_exe = node_path / "node.exe"
+        
         if node_exe.exists():
             logger.info("✅ Node.js already installed")
             # Verify version
@@ -290,7 +291,8 @@ class ToolsManager:
                 result = subprocess.run(
                     [str(node_exe), "--version"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 logger.info(f"   Version: {result.stdout.strip()}")
             except:
@@ -314,9 +316,12 @@ class ToolsManager:
         return False
     
     @staticmethod
-    def setup_pnpm() -> bool:
-        """Setup portable pnpm (standalone executable)"""
-        pnpm_exe = Config.PNPM_DIR / "pnpm.exe"
+    def setup_pnpm(max_retries: int = 3) -> bool:
+        """Setup portable pnpm (standalone executable) with retry logic"""
+        import time
+        
+        pnpm_path = ToolsManager.get_pnpm_path()
+        pnpm_exe = pnpm_path / "pnpm.exe"
         
         if pnpm_exe.exists():
             logger.info("✅ pnpm already installed")
@@ -324,72 +329,121 @@ class ToolsManager:
         
         logger.info("📦 Downloading pnpm standalone...")
         
-        try:
-            # Get latest pnpm release from GitHub
-            response = requests.get(
-                "https://api.github.com/repos/pnpm/pnpm/releases/latest",
-                timeout=10
-            )
-            response.raise_for_status()
-            release_data = response.json()
-            
-            # Find Windows x64 asset
-            asset_url = None
-            for asset in release_data['assets']:
-                if 'win-x64' in asset['name'] and asset['name'].endswith('.exe'):
-                    asset_url = asset['browser_download_url']
-                    break
-            
-            if not asset_url:
-                raise Exception("pnpm Windows executable not found in release")
-            
-            logger.info(f"📥 Downloading from: {asset_url}")
-            
-            # Download pnpm
-            Config.PNPM_DIR.mkdir(parents=True, exist_ok=True)
-            response = requests.get(asset_url, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            with open(pnpm_exe, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            
-            logger.info("✅ pnpm standalone downloaded successfully!")
-            
-            # Test pnpm
-            result = subprocess.run(
-                [str(pnpm_exe), "--version"],
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"   pnpm version: {result.stdout.strip()}")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to download pnpm: {e}")
-            logger.info("")
-            logger.info("💡 Manual alternative:")
-            logger.info("   1. Download: https://github.com/pnpm/pnpm/releases/latest")
-            logger.info("   2. Get: pnpm-win-x64.exe")
-            logger.info("   3. Rename to: pnpm.exe")
-            logger.info(f"   4. Put in: {Config.PNPM_DIR}")
-            return False
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt > 1:
+                    logger.info(f"🔄 Retry attempt {attempt}/{max_retries}...")
+                
+                # Get latest pnpm release from GitHub with retry
+                response = requests.get(
+                    "https://api.github.com/repos/pnpm/pnpm/releases/latest",
+                    timeout=15
+                )
+                response.raise_for_status()
+                release_data = response.json()
+                
+                # Find Windows x64 asset
+                asset_url = None
+                for asset in release_data['assets']:
+                    if 'win-x64' in asset['name'] and asset['name'].endswith('.exe'):
+                        asset_url = asset['browser_download_url']
+                        break
+                
+                if not asset_url:
+                    raise Exception("pnpm Windows executable not found in release")
+                
+                logger.info(f"📥 Downloading from: {asset_url}")
+                
+                # Download pnpm
+                pnpm_path = ToolsManager.get_pnpm_path()
+                pnpm_path.mkdir(parents=True, exist_ok=True)
+                response = requests.get(asset_url, stream=True, timeout=60)
+                response.raise_for_status()
+                
+                with open(pnpm_exe, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                
+                logger.info("✅ pnpm standalone downloaded successfully!")
+                
+                # Test pnpm
+                result = subprocess.run(
+                    [str(pnpm_exe), "--version"],
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                logger.info(f"   pnpm version: {result.stdout.strip()}")
+                
+                return True
+                
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"⚠️  Network error (attempt {attempt}/{max_retries})")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    
+                    # Clean up partial download
+                    if pnpm_exe.exists():
+                        try:
+                            pnpm_exe.unlink()
+                        except:
+                            pass
+                    
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed to download pnpm after {max_retries} attempts")
+                    logger.info("")
+                    logger.info("💡 Manual alternative:")
+                    logger.info("   1. Download: https://github.com/pnpm/pnpm/releases/latest")
+                    logger.info("   2. Get: pnpm-win-x64.exe")
+                    logger.info("   3. Rename to: pnpm.exe")
+                    logger.info(f"   4. Put in: {ToolsManager.get_pnpm_path()}")
+                    return False
+                    
+            except Exception as e:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"⚠️  Error (attempt {attempt}/{max_retries}): {str(e)[:100]}")
+                    logger.info(f"⏳ Retrying in {wait_time} seconds...")
+                    
+                    # Clean up partial download
+                    if pnpm_exe.exists():
+                        try:
+                            pnpm_exe.unlink()
+                        except:
+                            pass
+                    
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Failed to download pnpm: {e}")
+                    logger.info("")
+                    logger.info("💡 Manual alternative:")
+                    logger.info("   1. Download: https://github.com/pnpm/pnpm/releases/latest")
+                    logger.info("   2. Get: pnpm-win-x64.exe")
+                    logger.info("   3. Rename to: pnpm.exe")
+                    logger.info(f"   4. Put in: {ToolsManager.get_pnpm_path()}")
+                    return False
+        
+        return False
     
     @staticmethod
     def setup_mariadb() -> bool:
         """Setup portable MariaDB"""
-        mysqld_exe = Config.MARIADB_DIR / "bin" / "mysqld.exe"
+        mariadb_path = ToolsManager.get_mariadb_path()
+        mysqld_exe = mariadb_path / "bin" / "mysqld.exe"
         if mysqld_exe.exists():
             logger.info("✅ MariaDB already installed")
             # Verify version
             try:
-                mysql_exe = Config.MARIADB_DIR / "bin" / "mysql.exe"
+                mariadb_path = ToolsManager.get_mariadb_path()
+                mysql_exe = mariadb_path / "bin" / "mysql.exe"
                 result = subprocess.run(
                     [str(mysql_exe), "--version"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 logger.info(f"   Version: {result.stdout.strip()}")
             except:
@@ -415,8 +469,9 @@ class ToolsManager:
     @staticmethod
     def init_mariadb() -> bool:
         """Initialize MariaDB database"""
-        mysql_install_db = Config.MARIADB_DIR / "bin" / "mysql_install_db.exe"
-        mysqld_exe = Config.MARIADB_DIR / "bin" / "mysqld.exe"
+        mariadb_path = ToolsManager.get_mariadb_path()
+        mysql_install_db = mariadb_path / "bin" / "mysql_install_db.exe"
+        mysqld_exe = mariadb_path / "bin" / "mysqld.exe"
         
         if not mysqld_exe.exists():
             logger.error("❌ MariaDB not found!")
@@ -439,7 +494,8 @@ class ToolsManager:
                         f"--datadir={data_dir}",
                         "--default-user"
                     ],
-                    check=True
+                    check=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
             else:
                 # Alternative: Use mysqld --initialize
@@ -449,7 +505,8 @@ class ToolsManager:
                         f"--datadir={data_dir}",
                         "--initialize-insecure"
                     ],
-                    check=True
+                    check=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
             
             logger.info("✅ MariaDB initialized")
@@ -546,50 +603,205 @@ class ProcessManager:
     """Manage running processes"""
     
     processes: Dict[str, subprocess.Popen] = {}
+    installation_in_progress: bool = False  # Flag to prevent auto-check during installation
+    
+    @staticmethod
+    def kill_process_on_port(port: int) -> bool:
+        """Kill any process using the specified port (Windows only)"""
+        try:
+            import psutil
+            
+            # Get current process info to avoid killing ourselves
+            current_pid = os.getpid()
+            current_process_name = psutil.Process(current_pid).name().lower()
+            
+            killed = False
+            for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                try:
+                    # Check if process has any connections on the target port
+                    for conn in proc.connections():
+                        if conn.laddr.port == port:
+                            proc_pid = proc.info['pid']
+                            proc_name = proc.info['name']
+                            
+                            # Skip if it's our own process (installation server, gui server, etc)
+                            if proc_pid == current_pid:
+                                logger.info(f"ℹ️  Port {port} is used by current process, skipping kill")
+                                return True
+                            
+                            # Skip if it's another instance of our agent
+                            if '4pawsagent' in proc_name.lower() or 'python' in proc_name.lower():
+                                # Could be our GUI server or installation server
+                                logger.info(f"ℹ️  Port {port} is used by {proc_name} (likely our own server), skipping kill")
+                                return True
+                            
+                            logger.info(f"🔪 Killing {proc_name} (PID {proc_pid}) on port {port}")
+                            
+                            # Use taskkill for force kill on Windows
+                            if sys.platform == 'win32':
+                                subprocess.run(
+                                    ['taskkill', '/F', '/PID', str(proc_pid)],
+                                    capture_output=True,
+                                    timeout=5,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
+                            else:
+                                proc.kill()
+                            
+                            killed = True
+                            logger.info(f"✅ Killed process on port {port}")
+                            break
+                            
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutError):
+                    continue
+            
+            if not killed:
+                logger.info(f"ℹ️  No process found on port {port}")
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Could not check/kill port {port}: {e}")
+            return False
     
     @classmethod
     def start_mariadb(cls) -> bool:
         """Start MariaDB server"""
-        if "mariadb" in cls.processes:
-            logger.info("✅ MariaDB already running")
-            return True
+        # Kill any existing process on MariaDB port first
+        logger.info(f"🔍 Checking port {Config.MARIADB_PORT}...")
+        cls.kill_process_on_port(Config.MARIADB_PORT)
         
-        mysqld_exe = Config.MARIADB_DIR / "bin" / "mysqld.exe"
-        data_dir = Config.DATA_DIR / "mariadb"
+        if "mariadb" in cls.processes:
+            # Check if process is actually still running
+            try:
+                proc = cls.processes["mariadb"]
+                if proc.poll() is None:  # Process is still running
+                    logger.info("✅ MariaDB already running")
+                    return True
+                else:
+                    # Process died, remove it
+                    logger.warning("⚠️  MariaDB process died, restarting...")
+                    del cls.processes["mariadb"]
+            except:
+                del cls.processes["mariadb"]
+        
+        mariadb_path = ToolsManager.get_mariadb_path()
+        mysqld_exe = mariadb_path / "bin" / "mysqld.exe"
         
         if not mysqld_exe.exists():
             logger.error("❌ MariaDB not found!")
+            logger.error(f"   Expected: {mysqld_exe}")
+            return False
+        
+        data_dir = Config.DATA_DIR / "mariadb"
+        
+        # Ensure data directory exists before starting
+        if not data_dir.exists():
+            logger.error(f"❌ MariaDB data directory not initialized!")
+            logger.error(f"   Expected: {data_dir}")
+            logger.error(f"🔧 Please run: python agent.py setup")
+            logger.error(f"   This will initialize MariaDB data directory")
             return False
         
         try:
             logger.info("🚀 Starting MariaDB...")
-            process = subprocess.Popen(
-                [
-                    str(mysqld_exe),
-                    f"--datadir={data_dir}",
-                    f"--port={Config.MARIADB_PORT}",
-                    "--default-storage-engine=InnoDB",
-                    "--skip-grant-tables",  # Allow passwordless access for initial setup
-                    "--console"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            
+            # Create log file path for MariaDB
+            log_file = Config.LOGS_DIR / "mariadb.log"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Start with output redirect to log file (prevents buffer issues)
+            # Use CREATE_NEW_PROCESS_GROUP so we can kill the entire process tree later
+            creation_flags = subprocess.CREATE_NO_WINDOW
+            if sys.platform == 'win32':
+                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+            
+            with open(log_file, 'w') as log:
+                process = subprocess.Popen(
+                    [
+                        str(mysqld_exe),
+                        f"--datadir={data_dir}",
+                        f"--port={Config.MARIADB_PORT}",
+                        "--default-storage-engine=InnoDB",
+                        "--skip-grant-tables",  # Allow passwordless access for initial setup
+                        "--console"
+                    ],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    creationflags=creation_flags
+                )
+            
+            # Wait a bit and check if process is still running
+            import time
+            time.sleep(2)
+            
+            if process.poll() is not None:
+                logger.error(f"❌ MariaDB failed to start (exit code: {process.returncode})")
+                logger.error(f"📝 Log file: {log_file}")
+                
+                # Read and display last lines from log file for debugging
+                try:
+                    if log_file.exists() and log_file.stat().st_size > 0:
+                        logger.error("📋 Last 20 lines from MariaDB log:")
+                        logger.error("-" * 60)
+                        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            lines = f.readlines()
+                            # Show last 20 lines or all if less than 20
+                            for line in lines[-20:]:
+                                logger.error(f"   {line.rstrip()}")
+                        logger.error("-" * 60)
+                    else:
+                        logger.error("⚠️  Log file is empty or doesn't exist")
+                except Exception as e:
+                    logger.error(f"⚠️  Could not read log file: {e}")
+                
+                # Common causes and solutions
+                logger.error("💡 Common causes:")
+                logger.error("   1. Port 3307 already in use")
+                logger.error("   2. Data directory corruption")
+                logger.error("   3. Insufficient permissions")
+                logger.error("   4. Missing required DLL files")
+                logger.error("")
+                logger.error("🔧 Suggested actions:")
+                logger.error("   1. Check if another MariaDB/MySQL is running on port 3307")
+                logger.error("   2. Try: taskkill /F /IM mysqld.exe")
+                logger.error(f"   3. Delete data directory: {data_dir}")
+                logger.error("   4. Run: python agent.py setup (to reinitialize)")
+                
+                return False
+            
             cls.processes["mariadb"] = process
             logger.info(f"✅ MariaDB started (PID: {process.pid})")
             logger.info(f"🌐 MariaDB Port: {Config.MARIADB_PORT}")
+            logger.info(f"📝 MariaDB log: {log_file}")
             return True
             
         except Exception as e:
             logger.error(f"❌ Failed to start MariaDB: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     @classmethod
     def start_backend(cls) -> bool:
         """Start backend server (simple mode - no install)"""
+        # Kill any existing process on backend port first
+        logger.info(f"🔍 Checking port {Config.BACKEND_PORT}...")
+        cls.kill_process_on_port(Config.BACKEND_PORT)
+        
         if "backend" in cls.processes:
-            logger.info("✅ Backend already running")
-            return True
+            # Check if process is actually still running
+            try:
+                proc = cls.processes["backend"]
+                if proc.poll() is None:  # Process is still running
+                    logger.info("✅ Backend already running")
+                    return True
+                else:
+                    # Process died, remove it
+                    logger.warning("⚠️  Backend process died, restarting...")
+                    del cls.processes["backend"]
+            except:
+                del cls.processes["backend"]
         
         # Use node directly instead of start.bat
         main_js = Config.BACKEND_DIR / "dist" / "src" / "main.js"
@@ -607,8 +819,8 @@ class ProcessManager:
             
             # Prepare environment with Node.js and pnpm in PATH
             env = os.environ.copy()
-            node_dir = str(Config.NODE_DIR.absolute())
-            pnpm_dir = str(Config.PNPM_DIR.absolute())
+            node_dir = str(ToolsManager.get_node_path().absolute())
+            pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
             
             # Add portable tools to PATH (only for this subprocess)
             if 'PATH' in env:
@@ -620,6 +832,11 @@ class ProcessManager:
             log_file = Config.LOGS_DIR / "backend.log"
             log_file.parent.mkdir(parents=True, exist_ok=True)
             
+            # Use CREATE_NEW_PROCESS_GROUP so we can kill the entire process tree later
+            creation_flags = subprocess.CREATE_NO_WINDOW
+            if sys.platform == 'win32':
+                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+            
             # Start with output redirect to log file
             with open(log_file, 'w') as log:
                 process = subprocess.Popen(
@@ -627,8 +844,18 @@ class ProcessManager:
                     cwd=str(Config.BACKEND_DIR),
                     stdout=log,
                     stderr=subprocess.STDOUT,
-                    env=env
+                    env=env,
+                    creationflags=creation_flags
                 )
+            
+            # Wait a bit and check if process is still running
+            import time
+            time.sleep(2)
+            
+            if process.poll() is not None:
+                logger.error(f"❌ Backend failed to start (exit code: {process.returncode})")
+                logger.error(f"📝 Check log: {log_file}")
+                return False
             
             cls.processes["backend"] = process
             logger.info(f"✅ Backend started (PID: {process.pid})")
@@ -638,14 +865,30 @@ class ProcessManager:
             
         except Exception as e:
             logger.error(f"❌ Failed to start backend: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     @classmethod
     def start_frontend(cls) -> bool:
         """Start frontend server (simple mode - no install)"""
+        # Kill any existing process on frontend port first
+        logger.info(f"🔍 Checking port {Config.FRONTEND_PORT}...")
+        cls.kill_process_on_port(Config.FRONTEND_PORT)
+        
         if "frontend" in cls.processes:
-            logger.info("✅ Frontend already running")
-            return True
+            # Check if process is actually still running
+            try:
+                proc = cls.processes["frontend"]
+                if proc.poll() is None:  # Process is still running
+                    logger.info("✅ Frontend already running")
+                    return True
+                else:
+                    # Process died, remove it
+                    logger.warning("⚠️  Frontend process died, restarting...")
+                    del cls.processes["frontend"]
+            except:
+                del cls.processes["frontend"]
         
         # Check if frontend build exists
         if not Config.FRONTEND_DIR.exists():
@@ -658,7 +901,8 @@ class ProcessManager:
             return False
         
         # Get full path to pnpm executable
-        pnpm_exe = Config.PNPM_DIR / "pnpm.exe"
+        pnpm_path = ToolsManager.get_pnpm_path()
+        pnpm_exe = pnpm_path / "pnpm.exe"
         if not pnpm_exe.exists():
             logger.error("❌ pnpm not found! Run: python agent.py setup")
             return False
@@ -668,8 +912,8 @@ class ProcessManager:
             
             # Prepare environment with Node.js and pnpm in PATH
             env = os.environ.copy()
-            node_dir = str(Config.NODE_DIR.absolute())
-            pnpm_dir = str(Config.PNPM_DIR.absolute())
+            node_dir = str(ToolsManager.get_node_path().absolute())
+            pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
             
             # Add portable tools to PATH (only for this subprocess)
             if 'PATH' in env:
@@ -681,6 +925,11 @@ class ProcessManager:
             log_file = Config.LOGS_DIR / "frontend.log"
             log_file.parent.mkdir(parents=True, exist_ok=True)
             
+            # Use CREATE_NEW_PROCESS_GROUP so we can kill the entire process tree later
+            creation_flags = subprocess.CREATE_NO_WINDOW
+            if sys.platform == 'win32':
+                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+            
             # Start with output redirect to log file
             with open(log_file, 'w') as log:
                 process = subprocess.Popen(
@@ -689,8 +938,18 @@ class ProcessManager:
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     env=env,
-                    shell=False
+                    shell=False,
+                    creationflags=creation_flags
                 )
+            
+            # Wait a bit and check if process is still running
+            import time
+            time.sleep(2)
+            
+            if process.poll() is not None:
+                logger.error(f"❌ Frontend failed to start (exit code: {process.returncode})")
+                logger.error(f"📝 Check log: {log_file}")
+                return False
             
             cls.processes["frontend"] = process
             logger.info(f"✅ Frontend started (PID: {process.pid})")
@@ -706,17 +965,106 @@ class ProcessManager:
     
     @classmethod
     def stop_all(cls):
-        """Stop all running processes"""
-        for name, process in cls.processes.items():
+        """Stop all running processes (including child processes)"""
+        import time
+        
+        # Check if there are any processes to stop
+        if not cls.processes:
+            logger.info("ℹ️  No services running")
+            return
+        
+        # Create a copy of items to avoid dictionary changed size during iteration
+        processes_to_stop = list(cls.processes.items())
+        
+        # Count actually running processes
+        running_count = 0
+        for name, process in processes_to_stop:
+            if process.poll() is None:
+                running_count += 1
+        
+        if running_count == 0:
+            logger.info("ℹ️  All services already stopped")
+            cls.processes.clear()
+            return
+        
+        logger.info(f"⏹️  Stopping {running_count} running service(s)...")
+        
+        for name, process in processes_to_stop:
             try:
+                # Check if process is still running
+                if process.poll() is not None:
+                    logger.info(f"ℹ️  {name} already stopped")
+                    continue
+                
                 logger.info(f"⏹️  Stopping {name}...")
-                process.terminate()
-                process.wait(timeout=10)
-                logger.info(f"✅ {name} stopped")
+                
+                # On Windows, kill the entire process tree (parent + all children)
+                # Because we started with CREATE_NEW_PROCESS_GROUP, taskkill /T will work properly
+                if sys.platform == 'win32':
+                    try:
+                        # Use taskkill with /T flag to terminate process tree
+                        result = subprocess.run(
+                            ['taskkill', '/F', '/T', '/PID', str(process.pid)],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                        
+                        if result.returncode == 0:
+                            logger.info(f"✅ {name} stopped (including all child processes)")
+                        else:
+                            # taskkill failed, try process.kill() as fallback
+                            logger.warning(f"⚠️  taskkill returned {result.returncode}, using fallback...")
+                            process.kill()
+                            process.wait(timeout=5)
+                            logger.info(f"✅ {name} stopped (fallback method)")
+                            
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"⚠️  taskkill timeout for {name}, force killing...")
+                        process.kill()
+                        process.wait(timeout=5)
+                        logger.info(f"✅ {name} force killed")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Error stopping {name}: {e}, trying fallback...")
+                        try:
+                            process.kill()
+                            process.wait(timeout=5)
+                            logger.info(f"✅ {name} stopped (fallback)")
+                        except:
+                            pass
+                else:
+                    # On Linux/Mac, try graceful termination first
+                    process.terminate()
+                    try:
+                        process.wait(timeout=10)
+                        logger.info(f"✅ {name} stopped gracefully")
+                    except subprocess.TimeoutExpired:
+                        # Process didn't terminate gracefully, force kill
+                        logger.warning(f"⚠️  {name} didn't stop gracefully, forcing...")
+                        process.kill()
+                        process.wait(timeout=5)
+                        logger.info(f"✅ {name} force stopped")
+                    
             except Exception as e:
                 logger.error(f"❌ Failed to stop {name}: {e}")
+                # Final fallback attempt
+                try:
+                    if sys.platform == 'win32':
+                        subprocess.run(
+                            ['taskkill', '/F', '/T', '/PID', str(process.pid)],
+                            capture_output=True,
+                            timeout=5,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                    else:
+                        process.kill()
+                except:
+                    pass
         
+        # Clear all processes
         cls.processes.clear()
+        logger.info("✅ All services have been stopped")
 
 
 class Agent:
@@ -756,12 +1104,30 @@ class Agent:
             if log_callback:
                 log_callback(msg, level)
         
+        # Set flag to prevent auto-check updates during installation
+        ProcessManager.installation_in_progress = True
+        
         log("🚀 Starting first-time installation...")
         
         try:
-            # Step 1: Download applications (0-40%)
+            # Step 0: Setup tools first (Node.js, pnpm, MariaDB) (0-20%)
             if progress_callback:
-                progress_callback(0, 'download', 'active', 
+                progress_callback(0, 'tools', 'active',
+                                'Setting Up Tools',
+                                'Installing Node.js, pnpm, and MariaDB...')
+            
+            log("🔧 Setting up required tools...")
+            if not self.setup_tools():
+                log("❌ Failed to setup tools", 'error')
+                log("💡 Tools include: Node.js, pnpm, MariaDB", 'warning')
+                return False
+            
+            if progress_callback:
+                progress_callback(20, 'tools', 'completed')
+            
+            # Step 1: Download applications (20-40%)
+            if progress_callback:
+                progress_callback(20, 'download', 'active', 
                                 'Downloading Applications', 
                                 'Fetching latest releases from GitHub...')
             
@@ -771,7 +1137,7 @@ class Agent:
                 return False
             
             if progress_callback:
-                progress_callback(20, 'download', 'active')
+                progress_callback(30, 'download', 'active')
             
             log("📥 Downloading backend...")
             if not self.download_and_install("backend"):
@@ -781,31 +1147,33 @@ class Agent:
             if progress_callback:
                 progress_callback(40, 'download', 'completed')
             
-            # Step 2: Install dependencies (40-60%)
+            # Step 2: Install dependencies (40-75%)
             if progress_callback:
                 progress_callback(40, 'install', 'active',
                                 'Installing Dependencies',
-                                'Setting up Node.js packages...')
+                                'Setting up backend dependencies...')
             
             log("📦 Setting up applications...")
-            if not self.setup_apps():
+            
+            # Setup with granular progress updates
+            if not self._setup_apps_with_progress("all", progress_callback, log):
                 log("❌ Failed to setup applications", 'error')
                 return False
             
             if progress_callback:
-                progress_callback(60, 'install', 'completed')
+                progress_callback(75, 'install', 'completed')
             
-            # Step 3: Database is already done in setup_apps (60-80%)
+            # Step 3: Database is already done in setup_apps (75-80%)
             if progress_callback:
                 progress_callback(80, 'database', 'completed',
                                 'Database Ready',
                                 'MariaDB configured and migrations complete')
             
-            # Step 4: Start services (80-100%)
+            # Step 4: Start services (80-95%)
             if progress_callback:
                 progress_callback(80, 'start', 'active',
                                 'Starting Services',
-                                'Launching frontend and backend...')
+                                'Launching MariaDB, backend, and frontend...')
             
             log("🚀 Starting services...")
             if not self.start_all(skip_setup=True):
@@ -837,6 +1205,9 @@ class Agent:
             import traceback
             logger.error(traceback.format_exc())
             return False
+        finally:
+            # Clear flag after installation completes (success or fail)
+            ProcessManager.installation_in_progress = False
     
     def check_updates(self) -> Dict[str, Optional[str]]:
         """Check for updates on GitHub"""
@@ -937,7 +1308,11 @@ class Agent:
     
     def setup_apps(self, component: str = "all") -> bool:
         """Setup apps: install dependencies and run migrations"""
-        logger.info("🔧 Setting up applications...")
+        return self._setup_apps_with_progress(component, None, logger.info)
+    
+    def _setup_apps_with_progress(self, component: str, progress_callback, log):
+        """Setup apps with granular progress updates"""
+        log("🔧 Setting up applications...")
         
         # Ensure .env files exist
         if component in ["backend", "all"] and Config.BACKEND_DIR.exists():
@@ -948,43 +1323,98 @@ class Agent:
         # Start MariaDB if setting up backend (needed for migrations)
         mariadb_started = False
         if component in ["backend", "all"]:
-            logger.info("🚀 Starting MariaDB for database setup...")
+            log("🚀 Starting MariaDB for database setup...")
             if ProcessManager.start_mariadb():
                 mariadb_started = True
-                logger.info("✅ MariaDB started")
+                log("✅ MariaDB started")
                 # Wait for MariaDB to be ready
                 import time
                 time.sleep(3)
             else:
-                logger.error("❌ Failed to start MariaDB!")
+                log("❌ Failed to start MariaDB!", 'error')
                 return False
         
         success = True
         
         if component in ["backend", "all"]:
-            success &= self._setup_backend()
+            if progress_callback:
+                progress_callback(42, 'install', 'active', 'Backend Setup', 'Installing backend dependencies...')
+            success &= self._setup_backend_with_heartbeat()
+            if progress_callback:
+                progress_callback(55, 'install', 'active', 'Backend Setup', 'Backend dependencies installed')
         
         if component in ["frontend", "all"]:
-            success &= self._setup_frontend()
+            if progress_callback:
+                progress_callback(60, 'install', 'active', 'Frontend Setup', 'Installing frontend dependencies...')
+            success &= self._setup_frontend_with_heartbeat()
+            if progress_callback:
+                progress_callback(75, 'install', 'active', 'Frontend Setup', 'Frontend dependencies installed')
         
         # Stop MariaDB if we started it
         if mariadb_started:
-            logger.info("⏹️  Stopping MariaDB...")
+            log("⏹️  Stopping MariaDB...")
             if "mariadb" in ProcessManager.processes:
                 try:
                     ProcessManager.processes["mariadb"].terminate()
                     ProcessManager.processes["mariadb"].wait(timeout=10)
                     del ProcessManager.processes["mariadb"]
-                    logger.info("✅ MariaDB stopped")
+                    log("✅ MariaDB stopped")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to stop MariaDB: {e}")
         
         if success:
-            logger.info("✅ Application setup complete!")
+            log("✅ Application setup complete!")
         else:
-            logger.error("❌ Application setup failed!")
+            log("❌ Application setup failed!", 'error')
         
         return success
+    
+    def _run_with_heartbeat(self, cmd, cwd, env, operation_name: str, timeout: int = 300) -> subprocess.CompletedProcess:
+        """Run a subprocess with heartbeat logging every 15 seconds"""
+        import threading
+        import time
+        
+        # Flag to stop heartbeat
+        stop_heartbeat = threading.Event()
+        elapsed_time = [0]  # Use list to allow modification in nested function
+        
+        def heartbeat():
+            """Log a heartbeat message every 15 seconds"""
+            while not stop_heartbeat.is_set():
+                stop_heartbeat.wait(15)  # Wait 15 seconds or until stopped
+                if not stop_heartbeat.is_set():
+                    elapsed_time[0] += 15
+                    logger.info(f"   ⏳ Still {operation_name}... ({elapsed_time[0]}s elapsed)")
+        
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        heartbeat_thread.start()
+        
+        try:
+            # Run the subprocess
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                shell=False,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return result
+        finally:
+            # Stop heartbeat
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=1)
+    
+    def _setup_backend_with_heartbeat(self) -> bool:
+        """Setup backend with heartbeat logs during long operations"""
+        return self._setup_backend()
+    
+    def _setup_frontend_with_heartbeat(self) -> bool:
+        """Setup frontend with heartbeat logs during long operations"""
+        return self._setup_frontend()
     
     def _setup_backend(self) -> bool:
         """Setup backend: pnpm install + prisma generate + migrate"""
@@ -995,27 +1425,28 @@ class Agent:
         logger.info("🔧 Setting up backend...")
         
         # Get full path to pnpm executable
-        pnpm_exe = Config.PNPM_DIR / "pnpm.exe"
+        pnpm_path = ToolsManager.get_pnpm_path()
+        pnpm_exe = pnpm_path / "pnpm.exe"
         if not pnpm_exe.exists():
             logger.error("❌ pnpm not found! Run: python agent.py setup")
             return False
         
         # Prepare environment with Node.js in PATH
         env = os.environ.copy()
-        node_dir = str(Config.NODE_DIR.absolute())
-        pnpm_dir = str(Config.PNPM_DIR.absolute())
+        node_dir = str(ToolsManager.get_node_path().absolute())
+        pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
         env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
         
         try:
             # 1. Install dependencies
             logger.info("📦 Installing dependencies...")
-            result = subprocess.run(
+            logger.info("⏳ This may take 30-60 seconds, please wait...")
+            result = self._run_with_heartbeat(
                 [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
-                cwd=str(Config.BACKEND_DIR),
-                env=env,
-                capture_output=True,
-                text=True,
-                shell=False
+                str(Config.BACKEND_DIR),
+                env,
+                "installing backend dependencies",
+                timeout=180
             )
             if result.returncode != 0:
                 logger.error(f"❌ Failed to install dependencies:")
@@ -1029,13 +1460,13 @@ class Agent:
                 logger.info("✅ Prisma client already exists, skipping generate...")
             else:
                 logger.info("🔧 Generating Prisma client...")
-                result = subprocess.run(
+                logger.info("⏳ This may take 1-2 minutes, please wait...")
+                result = self._run_with_heartbeat(
                     [str(pnpm_exe), "prisma", "generate"],
-                    cwd=str(Config.BACKEND_DIR),
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    shell=False
+                    str(Config.BACKEND_DIR),
+                    env,
+                    "generating Prisma client",
+                    timeout=180
                 )
                 if result.returncode != 0:
                     logger.error(f"❌ Failed to generate Prisma client:")
@@ -1046,7 +1477,8 @@ class Agent:
             
             # 3. Create database if not exists
             logger.info("🗄️  Creating database if not exists...")
-            mysql_exe = Config.MARIADB_DIR / "bin" / "mysql.exe"
+            mariadb_path = ToolsManager.get_mariadb_path()
+            mysql_exe = mariadb_path / "bin" / "mysql.exe"
             if mysql_exe.exists():
                 try:
                     # Create database command
@@ -1060,7 +1492,8 @@ class Agent:
                         ],
                         check=True,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
                     )
                     logger.info(f"✅ Database '{Config.MARIADB_DB}' ready")
                 except Exception as e:
@@ -1075,7 +1508,8 @@ class Agent:
                 env=env,
                 capture_output=True,
                 text=True,
-                shell=False
+                shell=False,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             if result.returncode != 0:
                 logger.error(f"❌ Migration failed:")
@@ -1103,27 +1537,28 @@ class Agent:
         logger.info("🔧 Setting up frontend...")
         
         # Get full path to pnpm executable
-        pnpm_exe = Config.PNPM_DIR / "pnpm.exe"
+        pnpm_path = ToolsManager.get_pnpm_path()
+        pnpm_exe = pnpm_path / "pnpm.exe"
         if not pnpm_exe.exists():
             logger.error("❌ pnpm not found! Run: python agent.py setup")
             return False
         
         # Prepare environment with Node.js in PATH
         env = os.environ.copy()
-        node_dir = str(Config.NODE_DIR.absolute())
-        pnpm_dir = str(Config.PNPM_DIR.absolute())
+        node_dir = str(ToolsManager.get_node_path().absolute())
+        pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
         env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
         
         try:
             # Install dependencies
             logger.info("📦 Installing dependencies...")
-            result = subprocess.run(
+            logger.info("⏳ This may take 1-2 minutes, please wait...")
+            result = self._run_with_heartbeat(
                 [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
-                cwd=str(Config.FRONTEND_DIR),
-                env=env,
-                capture_output=True,
-                text=True,
-                shell=False
+                str(Config.FRONTEND_DIR),
+                env,
+                "installing frontend dependencies",
+                timeout=240
             )
             if result.returncode != 0:
                 logger.error(f"❌ Failed to install dependencies:")
@@ -1143,15 +1578,6 @@ class Agent:
         """Start all services (with optional auto-setup)"""
         logger.info("🚀 Starting all services...")
         
-        # Start MariaDB first (needed for setup-apps)
-        if not ProcessManager.start_mariadb():
-            logger.error("❌ Failed to start MariaDB!")
-            return False
-        
-        # Wait a bit for MariaDB to fully start
-        import time
-        time.sleep(3)
-        
         # Auto-detect if setup needed (unless skip_setup is True)
         if not skip_setup:
             needs_setup = False
@@ -1167,27 +1593,43 @@ class Agent:
             if needs_setup:
                 logger.info("🔧 First run detected, setting up applications...")
                 logger.info("💡 This will take 2-3 minutes...")
+                
+                # Start MariaDB for setup
+                if not ProcessManager.start_mariadb():
+                    logger.error("❌ Failed to start MariaDB for setup!")
+                    return False
+                
                 if not self.setup_apps():
                     logger.error("❌ Setup failed! Cannot start services.")
                     ProcessManager.stop_all()
                     return False
-                logger.info("")
+                
+                # Stop MariaDB after setup
+                ProcessManager.stop_all()
+                logger.info("✅ Setup complete, starting services...")
         
-        # Wait a bit for MariaDB to start
-        import time
-        time.sleep(5)
-        
-        # Start backend
-        if not ProcessManager.start_backend():
-            logger.error("❌ Failed to start backend!")
+        # Start MariaDB first (already includes 2s wait + verification)
+        if not ProcessManager.start_mariadb():
+            logger.error("❌ Failed to start MariaDB!")
             return False
         
-        # Wait for backend to start
-        time.sleep(5)
+        # Small delay to ensure MariaDB is ready to accept connections
+        import time
+        time.sleep(3)
         
-        # Start frontend
+        # Start backend (already includes 2s wait + verification)
+        if not ProcessManager.start_backend():
+            logger.error("❌ Failed to start backend!")
+            logger.error("💡 Check logs/backend.log for details")
+            return False
+        
+        # Small delay to ensure backend is ready
+        time.sleep(2)
+        
+        # Start frontend (already includes 2s wait + verification)
         if not ProcessManager.start_frontend():
             logger.error("❌ Failed to start frontend!")
+            logger.error("💡 Check logs/frontend.log for details")
             return False
         
         logger.info("✅ All services started!")
@@ -1207,15 +1649,16 @@ class Agent:
             return False
         
         # Get full path to pnpm executable
-        pnpm_exe = Config.PNPM_DIR / "pnpm.exe"
+        pnpm_path = ToolsManager.get_pnpm_path()
+        pnpm_exe = pnpm_path / "pnpm.exe"
         if not pnpm_exe.exists():
             logger.error("❌ pnpm not found! Run: python agent.py setup")
             return False
         
         # Prepare environment with Node.js in PATH
         env = os.environ.copy()
-        node_dir = str(Config.NODE_DIR.absolute())
-        pnpm_dir = str(Config.PNPM_DIR.absolute())
+        node_dir = str(ToolsManager.get_node_path().absolute())
+        pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
         env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
         
         # Check if MariaDB is running
@@ -1256,7 +1699,8 @@ class Agent:
                 env=env,
                 capture_output=True,
                 text=True,
-                shell=False
+                shell=False,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             if result.returncode != 0:
@@ -1345,7 +1789,8 @@ def set_agent_log_manager(log_manager):
     Set LogManager for agent logging
     This should be called from gui_server.py to enable web GUI logging
     """
-    log_manager_handler.set_log_manager(log_manager)
+    handler = get_log_manager_handler()
+    handler.set_log_manager(log_manager)
     logger.info("📋 Agent logging connected to Web GUI")
 
 
@@ -1374,6 +1819,9 @@ def main():
         print("  python agent.py shortcuts create         - Create desktop and start menu shortcuts")
         print("  python agent.py shortcuts remove         - Remove shortcuts")
         print("  python agent.py shortcuts check          - Check if shortcuts exist")
+        print("  python agent.py service install          - Install as Windows service (requires admin)")
+        print("  python agent.py service uninstall        - Uninstall Windows service (requires admin)")
+        print("  python agent.py service status           - Check service status")
         print("\nExamples:")
         print("  python agent.py check                    - Check updates only")
         print("  python agent.py update                   - Update all (asks confirmation)")
@@ -1541,6 +1989,76 @@ def main():
                     print(f"  📍 {ShortcutManager.get_start_menu_path() / '4Paws' / '4Paws Pet Management.url'}")
             else:
                 print(f"❌ Unknown shortcuts action: {action}")
+        
+        elif command == "service":
+            # Service management
+            from service_manager import ServiceManager
+            import ctypes
+            
+            if len(sys.argv) < 3:
+                print("\nUsage:")
+                print("  python agent.py service install    - Install as Windows service")
+                print("  python agent.py service uninstall  - Uninstall Windows service")
+                print("  python agent.py service start      - Start service")
+                print("  python agent.py service stop       - Stop service")
+                print("  python agent.py service status     - Check service status")
+                return
+            
+            action = sys.argv[2].lower()
+            
+            # Check admin rights for install/uninstall/start/stop
+            if action in ['install', 'uninstall', 'start', 'stop']:
+                is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+                if not is_admin:
+                    print("\n❌ Administrator rights required!")
+                    print("\nPlease run as administrator:")
+                    print("  1. Right-click Command Prompt or PowerShell")
+                    print("  2. Select 'Run as administrator'")
+                    print("  3. Run the command again")
+                    return
+            
+            if action == "install":
+                if ServiceManager.install_service():
+                    print("\n✅ Service installed successfully!")
+                    print("\nThe service will:")
+                    print("  ✅ Start automatically on Windows startup")
+                    print("  ✅ Auto-start applications (Frontend, Backend, MariaDB)")
+                    print("  ✅ Run in background")
+                    print("  ✅ Restart automatically if it crashes")
+                    print("\nTo start now:")
+                    print("  python agent.py service start")
+                else:
+                    print("\n❌ Failed to install service")
+            
+            elif action == "uninstall":
+                if ServiceManager.uninstall_service():
+                    print("\n✅ Service uninstalled successfully!")
+                    print("\nThe agent will no longer:")
+                    print("  • Start automatically on boot")
+                    print("  • Run as a background service")
+                else:
+                    print("\n❌ Failed to uninstall service")
+            
+            elif action == "start":
+                ServiceManager.start_service()
+            
+            elif action == "stop":
+                ServiceManager.stop_service()
+            
+            elif action == "status":
+                status = ServiceManager.get_service_status()
+                installed = ServiceManager.is_service_installed()
+                
+                print(f"\n4Paws Agent Service Status:")
+                print(f"  Installed: {'✅ Yes' if installed else '❌ No'}")
+                print(f"  Status: {status}")
+                
+                if installed and status == "Running":
+                    print(f"\n  🌐 Web GUI: http://localhost:5000")
+                    print(f"  🌐 Frontend: http://localhost:{Config.FRONTEND_PORT}")
+                    print(f"  🌐 Backend: http://localhost:{Config.BACKEND_PORT}")
+            else:
+                print(f"❌ Unknown service action: {action}")
         
         else:
             print(f"❌ Unknown command: {command}")

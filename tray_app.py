@@ -125,6 +125,39 @@ class TrayApp:
             return True
         return False
     
+    def auto_start_services(self):
+        """Auto-start services if apps are installed and not running"""
+        try:
+            # Check if apps are installed
+            if self.agent.are_apps_installed():
+                # Check if services are not already running
+                if not any(key in ProcessManager.processes for key in ['mariadb', 'backend', 'frontend']):
+                    print("🚀 Auto-starting services...")
+                    
+                    # Start services in background thread
+                    def start_services():
+                        import time
+                        time.sleep(3)  # Wait for GUI server to initialize
+                        try:
+                            if self.agent.start_all(skip_setup=True):
+                                self.update_icon_color("green")
+                                self.show_notification("Services Started", "All services are running")
+                                print("✅ Services started automatically")
+                            else:
+                                print("⚠️  Some services failed to start")
+                        except Exception as e:
+                            print(f"❌ Auto-start failed: {e}")
+                    
+                    start_thread = threading.Thread(target=start_services, daemon=True)
+                    start_thread.start()
+                else:
+                    print("✅ Services already running")
+                    self.update_icon_color("green")
+            else:
+                print("📦 Apps not installed yet")
+        except Exception as e:
+            print(f"⚠️  Auto-start check failed: {e}")
+    
     def open_web_gui(self, icon, item):
         """Open Web GUI in browser"""
         if self.gui_port is None:
@@ -168,6 +201,12 @@ class TrayApp:
     def check_updates_background(self):
         """Background check for updates (silent)"""
         try:
+            # Skip if installation is in progress
+            from agent import ProcessManager
+            if ProcessManager.installation_in_progress:
+                print("ℹ️  Skipping auto-check: Installation in progress")
+                return
+            
             updates = self.agent.check_updates()
             
             if updates:
@@ -200,6 +239,7 @@ class TrayApp:
         while self.auto_check_enabled:
             time.sleep(6 * 60 * 60)  # 6 hours
             if self.auto_check_enabled:
+                # Check will be skipped if installation is in progress
                 self.check_updates_background()
     
     def start_auto_check(self):
@@ -245,16 +285,37 @@ class TrayApp:
     
     def quit_app(self, icon, item):
         """Quit the application"""
+        print("\n🛑 Quitting 4Paws Agent...")
+        
         # Stop all services
         try:
+            print("⏹️  Stopping all services...")
             ProcessManager.stop_all()
-        except:
-            pass
+            print("✅ Services stopped")
+        except Exception as e:
+            print(f"⚠️  Error stopping services: {e}")
+            # Force kill any remaining processes
+            try:
+                import psutil
+                current_pid = os.getpid()
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        proc_name = proc.info['name'].lower()
+                        proc_pid = proc.info['pid']
+                        # Kill mysqld and node processes (but not ourselves)
+                        if proc_pid != current_pid and ('mysqld' in proc_name or 'node' in proc_name):
+                            print(f"🔪 Force killing {proc.info['name']} (PID {proc_pid})")
+                            proc.kill()
+                    except:
+                        pass
+            except Exception as cleanup_error:
+                print(f"⚠️  Cleanup error: {cleanup_error}")
         
         # Release lock
         self.release_lock()
         
         # Stop icon
+        print("✅ Quit complete")
         icon.stop()
     
     def create_menu(self):
@@ -294,6 +355,9 @@ Press any key to exit...
         try:
             # Start Web GUI server in background
             self.start_gui_server()
+            
+            # Auto-start services if apps are installed
+            self.auto_start_services()
             
             # Start auto-check updates thread
             self.start_auto_check()
