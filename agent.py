@@ -521,12 +521,25 @@ class AppManager:
     
     @staticmethod
     def extract_release(zip_path: Path, extract_to: Path) -> bool:
-        """Extract release ZIP"""
+        """Extract release ZIP while preserving node_modules"""
         try:
             logger.info(f"📂 Extracting {zip_path.name}...")
             
-            # Remove old version if exists (no backup to avoid path length issues)
+            # Preserve node_modules if exists (to avoid re-downloading dependencies)
+            node_modules_backup = None
             if extract_to.exists():
+                node_modules_path = extract_to / "node_modules"
+                if node_modules_path.exists():
+                    logger.info(f"💾 Backing up node_modules...")
+                    node_modules_backup = extract_to.parent / f"{extract_to.name}_node_modules_temp"
+                    try:
+                        shutil.move(str(node_modules_path), str(node_modules_backup))
+                        logger.info(f"✅ node_modules backed up")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to backup node_modules: {e}")
+                        node_modules_backup = None
+                
+                # Remove old version
                 logger.info(f"🗑️  Removing old version...")
                 try:
                     shutil.rmtree(extract_to)
@@ -535,15 +548,38 @@ class AppManager:
                     logger.warning(f"⚠️  Failed to remove old version: {e}")
                     logger.info("💡 Trying to extract anyway...")
             
-            # Extract
+            # Extract new version
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_to)
+            
+            # Restore node_modules
+            if node_modules_backup and node_modules_backup.exists():
+                logger.info(f"♻️  Restoring node_modules...")
+                try:
+                    restored_path = extract_to / "node_modules"
+                    shutil.move(str(node_modules_backup), str(restored_path))
+                    logger.info(f"✅ node_modules restored (update will be faster!)")
+                    logger.info(f"💡 Running 'pnpm install' to sync any new dependencies...")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to restore node_modules: {e}")
+                    # Cleanup backup
+                    try:
+                        shutil.rmtree(node_modules_backup)
+                    except:
+                        pass
             
             logger.info(f"✅ Extracted to {extract_to}")
             return True
             
         except Exception as e:
             logger.error(f"❌ Extraction failed: {e}")
+            # Cleanup backup if exists
+            if node_modules_backup and node_modules_backup.exists():
+                try:
+                    logger.info(f"🧹 Cleaning up backup...")
+                    shutil.rmtree(node_modules_backup)
+                except:
+                    pass
             return False
     
     @staticmethod
