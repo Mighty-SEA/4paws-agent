@@ -94,6 +94,7 @@ Section "4Paws Agent" SecMain
   
   ; Copy main executable
   File "..\dist\4PawsAgent.exe"
+  File "..\dist\tray_launcher.exe"
   File "README.txt"
   File "LICENSE.txt"
   
@@ -101,6 +102,7 @@ Section "4Paws Agent" SecMain
   CreateDirectory "$INSTDIR\tools"
   CreateDirectory "$INSTDIR\tools\node"
   CreateDirectory "$INSTDIR\tools\mariadb"
+  CreateDirectory "$INSTDIR\tools\pnpm"
   CreateDirectory "$INSTDIR\apps"
   CreateDirectory "$INSTDIR\data"
   CreateDirectory "$INSTDIR\logs"
@@ -116,7 +118,13 @@ Section "4Paws Agent" SecMain
   DetailPrint "Node.js extraction completed"
   
   ; Move node files from nested folder to tools/node
-  Rename "$INSTDIR\tools\node-v22.20.0-win-x64" "$INSTDIR\tools\node"
+  DetailPrint "Organizing Node.js files..."
+  nsExec::ExecToLog 'powershell -Command "if (Test-Path \"$INSTDIR\\tools\\node-v22.20.0-win-x64\") { Move-Item \"$INSTDIR\\tools\\node-v22.20.0-win-x64\\*\" \"$INSTDIR\\tools\\node\\\" -Force; Remove-Item \"$INSTDIR\\tools\\node-v22.20.0-win-x64\" -Force }"'
+  
+  ; Copy pnpm executable from assets
+  DetailPrint "Installing pnpm package manager..."
+  CopyFiles "pnpm.exe" "$INSTDIR\tools\pnpm\pnpm.exe"
+  DetailPrint "pnpm installation completed"
   
   ; Extract MariaDB using PowerShell
   DetailPrint "Extracting MariaDB portable (this may take 2-3 minutes)..."
@@ -125,7 +133,8 @@ Section "4Paws Agent" SecMain
   DetailPrint "MariaDB extraction completed"
   
   ; Move mariadb files from nested folder to tools/mariadb
-  Rename "$INSTDIR\tools\mariadb-12.0.2-winx64" "$INSTDIR\tools\mariadb"
+  DetailPrint "Organizing MariaDB files..."
+  nsExec::ExecToLog 'powershell -Command "if (Test-Path \"$INSTDIR\\tools\\mariadb-12.0.2-winx64\") { Move-Item \"$INSTDIR\\tools\\mariadb-12.0.2-winx64\\*\" \"$INSTDIR\\tools\\mariadb\\\" -Force; Remove-Item \"$INSTDIR\\tools\\mariadb-12.0.2-winx64\" -Force }"'
   
   ; Clean up temp files
   Delete "$INSTDIR\node-temp.zip"
@@ -165,10 +174,25 @@ Section "4Paws Agent" SecMain
     
     CreateDirectory "$SMPROGRAMS\$StartMenuFolder"
     CreateShortcut "$SMPROGRAMS\$StartMenuFolder\4Paws Agent.lnk" "$INSTDIR\4PawsAgent.exe"
+    CreateShortcut "$SMPROGRAMS\$StartMenuFolder\4Paws Tray.lnk" "$INSTDIR\tray_launcher.exe" "" "$INSTDIR\4PawsAgent.exe" 0
     CreateShortcut "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
     CreateShortcut "$SMPROGRAMS\$StartMenuFolder\README.lnk" "$INSTDIR\README.txt"
     
   !insertmacro MUI_STARTMENU_WRITE_END
+  
+  ; Install as Windows Service
+  DetailPrint "Installing Windows service..."
+  nsExec::ExecToLog 'sc create 4PawsAgent binPath= "$INSTDIR\4PawsAgent.exe" DisplayName= "4Paws Deployment Agent" start= auto'
+  nsExec::ExecToLog 'sc description 4PawsAgent "Manages 4Paws Pet Management System services"'
+  nsExec::ExecToLog 'sc failure 4PawsAgent reset= 86400 actions= restart/60000/restart/60000/restart/60000'
+  DetailPrint "Service installed. Will start automatically on next boot."
+  
+  ; Ask user if they want to start now
+  MessageBox MB_YESNO|MB_ICONQUESTION "Do you want to start 4Paws Agent service now?" IDYES StartService IDNO SkipStart
+  StartService:
+    DetailPrint "Starting service..."
+    nsExec::ExecToLog 'sc start 4PawsAgent'
+  SkipStart:
 
 SectionEnd
 
@@ -177,6 +201,14 @@ SectionEnd
 
 Section "Uninstall"
 
+  ; Stop and remove Windows service
+  DetailPrint "Stopping Windows service..."
+  nsExec::ExecToLog 'sc stop 4PawsAgent'
+  Sleep 2000
+  DetailPrint "Removing Windows service..."
+  nsExec::ExecToLog 'sc delete 4PawsAgent'
+  Sleep 1000
+  
   ; Stop any running services
   DetailPrint "Stopping services..."
   nsExec::ExecToLog 'taskkill /F /IM 4PawsAgent.exe'
@@ -186,6 +218,7 @@ Section "Uninstall"
   
   ; Delete files
   Delete "$INSTDIR\4PawsAgent.exe"
+  Delete "$INSTDIR\tray_launcher.exe"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\Uninstall.exe"

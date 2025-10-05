@@ -9,15 +9,29 @@ echo ║        NSIS Installer Creation        ║
 echo ╚════════════════════════════════════════╝
 echo.
 
-:: Step 1: Build executable
+:: Step 1: Build executables
 echo ==================================================
-echo   Step 1: Building Executable
+echo   Step 1: Building Executables
 echo ==================================================
 echo.
+
+:: Build main agent executable
+echo Building main agent executable...
 python build-exe.py
 if errorlevel 1 (
     echo.
-    echo ❌ Failed to build executable!
+    echo ❌ Failed to build main executable!
+    pause
+    exit /b 1
+)
+
+:: Build tray launcher executable
+echo.
+echo Building tray launcher executable...
+python build-tray-launcher.py
+if errorlevel 1 (
+    echo.
+    echo ❌ Failed to build tray launcher!
     pause
     exit /b 1
 )

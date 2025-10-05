@@ -8,6 +8,7 @@ import sys
 import json
 import socket
 import psutil
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_file
@@ -74,15 +75,33 @@ def get_process_status(name):
     if name in ProcessManager.processes:
         try:
             proc = ProcessManager.processes[name]
+            # Check if process is still alive
             if proc.poll() is None:
-                return {
-                    'running': True,
-                    'pid': proc.pid,
-                    'cpu': psutil.Process(proc.pid).cpu_percent(interval=0.1),
-                    'memory': psutil.Process(proc.pid).memory_info().rss / 1024 / 1024  # MB
-                }
-        except:
-            pass
+                # Try to get process stats
+                try:
+                    ps = psutil.Process(proc.pid)
+                    return {
+                        'running': True,
+                        'pid': proc.pid,
+                        'cpu': ps.cpu_percent(interval=0.1),
+                        'memory': ps.memory_info().rss / 1024 / 1024  # MB
+                    }
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Process exists but can't get stats
+                    return {
+                        'running': True,
+                        'pid': proc.pid,
+                        'cpu': 0,
+                        'memory': 0
+                    }
+            else:
+                # Process terminated, remove from dict
+                del ProcessManager.processes[name]
+        except Exception as e:
+            # Error checking process, assume it's dead
+            if name in ProcessManager.processes:
+                del ProcessManager.processes[name]
+    
     return {'running': False, 'pid': None, 'cpu': 0, 'memory': 0}
 
 @app.route('/')
@@ -160,24 +179,67 @@ def api_stop(service):
     """Stop a service"""
     try:
         log_manager.start_action(f'stop-{service}')
-        log_manager.info(f"⏹️ Stopping {service}...")
         
         if service == 'all':
+            # Check which services are actually running
+            running_services = []
+            for svc_name in ['mariadb', 'backend', 'frontend']:
+                if svc_name in ProcessManager.processes:
+                    proc = ProcessManager.processes[svc_name]
+                    if proc.poll() is None:  # Still running
+                        running_services.append(svc_name)
+            
+            if not running_services:
+                log_manager.info("ℹ️  All services already stopped")
+                log_manager.end_action(f'stop-{service}', True)
+                return jsonify({'success': True, 'message': 'All services already stopped'})
+            
+            log_manager.info(f"⏹️ Stopping {len(running_services)} running service(s): {', '.join(running_services)}")
             agent.stop_all()
             log_manager.success(f"✅ All services stopped")
             log_manager.end_action(f'stop-{service}', True)
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'stopped': running_services})
+            
         elif service in ['mariadb', 'backend', 'frontend']:
-            if service in ProcessManager.processes:
-                ProcessManager.processes[service].terminate()
-                ProcessManager.processes[service].wait(timeout=10)
+            # Check if service is in process manager
+            if service not in ProcessManager.processes:
+                log_manager.info(f"ℹ️  {service} is not running")
+                log_manager.end_action(f'stop-{service}', True)
+                return jsonify({'success': True, 'message': f'{service} is not running'})
+            
+            process = ProcessManager.processes[service]
+            
+            # Check if process already terminated
+            if process.poll() is not None:
+                log_manager.info(f"ℹ️  {service} already stopped")
                 del ProcessManager.processes[service]
-            log_manager.success(f"✅ {service} stopped")
+                log_manager.end_action(f'stop-{service}', True)
+                return jsonify({'success': True, 'message': f'{service} already stopped'})
+            
+            # Process is running, stop it
+            log_manager.info(f"⏹️ Stopping {service}...")
+            
+            try:
+                # Try graceful termination
+                process.terminate()
+                process.wait(timeout=10)
+                log_manager.success(f"✅ {service} stopped gracefully")
+            except subprocess.TimeoutExpired:
+                # Force kill if graceful termination fails
+                log_manager.warning(f"⚠️  {service} didn't stop gracefully, forcing...")
+                process.kill()
+                process.wait(timeout=5)
+                log_manager.success(f"✅ {service} force stopped")
+            
+            del ProcessManager.processes[service]
             log_manager.end_action(f'stop-{service}', True)
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'message': f'{service} stopped successfully'})
+            
         else:
             log_manager.error(f"Unknown service: {service}")
+            log_manager.end_action(f'stop-{service}', False)
             return jsonify({'success': False, 'error': f'Unknown service: {service}'}), 400
+            
     except Exception as e:
         log_manager.error(f"❌ Error stopping {service}: {str(e)}")
         log_manager.end_action(f'stop-{service}', False)
@@ -743,9 +805,38 @@ Opening browser in 2 seconds...
 🌐 Web GUI running at: http://localhost:{port}
 📊 Real-time monitoring enabled
 🎨 Dark/Light mode available
-
-Press Ctrl+C to stop the server
 """)
+        
+        # Auto-start services if not already running
+        if not any(key in ProcessManager.processes for key in ['mariadb', 'backend', 'frontend']):
+            print("🚀 Starting services automatically...")
+            log_manager.info("🚀 Auto-starting services...")
+            
+            # Start services in background thread
+            def auto_start():
+                import time
+                time.sleep(2)  # Wait for GUI to initialize
+                try:
+                    if agent.start_all(skip_setup=True):
+                        log_manager.info("✅ All services started successfully!")
+                        print("✅ All services started successfully!")
+                        print(f"🌐 Frontend: http://localhost:{Config.FRONTEND_PORT}")
+                        print(f"🌐 Backend: http://localhost:{Config.BACKEND_PORT}")
+                    else:
+                        log_manager.warning("⚠️  Some services failed to start. Check logs.")
+                        print("⚠️  Some services failed to start. Check logs in Web GUI.")
+                except Exception as e:
+                    log_manager.error(f"❌ Auto-start failed: {e}")
+                    print(f"❌ Auto-start failed: {e}")
+            
+            start_thread = threading.Thread(target=auto_start, daemon=True)
+            start_thread.start()
+        else:
+            print("✅ Services already running")
+            print(f"🌐 Frontend: http://localhost:{Config.FRONTEND_PORT}")
+            print(f"🌐 Backend: http://localhost:{Config.BACKEND_PORT}")
+        
+        print("\nPress Ctrl+C to stop the server")
     
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
 

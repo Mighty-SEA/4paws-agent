@@ -34,7 +34,8 @@ def check_prerequisites():
     required_files = {
         "4PawsAgent.exe": dist_dir / "4PawsAgent.exe",
         "Node.js ZIP": assets_dir / "node-v22.20.0-win-x64.zip",
-        "MariaDB ZIP": assets_dir / "mariadb-12.0.2-winx64.zip"
+        "MariaDB ZIP": assets_dir / "mariadb-12.0.2-winx64.zip",
+        "pnpm.exe": assets_dir / "pnpm.exe"
     }
     
     all_ok = True
@@ -87,6 +88,14 @@ def prepare_installer_files():
     print(f"📦 Copying MariaDB ZIP...")
     shutil.copy2(mariadb_src, mariadb_dst)
     print(f"{Colors.GREEN}✓{Colors.END} Copied MariaDB")
+    
+    # Copy pnpm.exe to installer dir
+    pnpm_src = assets_dir / "pnpm.exe"
+    pnpm_dst = installer_dir / "pnpm.exe"
+    
+    print(f"📦 Copying pnpm.exe...")
+    shutil.copy2(pnpm_src, pnpm_dst)
+    print(f"{Colors.GREEN}✓{Colors.END} Copied pnpm")
     
     print(f"\n{Colors.GREEN}✓ All files prepared!{Colors.END}")
     

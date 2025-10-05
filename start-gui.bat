@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 title 4Paws Agent - Starting...
 
 echo.
@@ -9,5 +10,6 @@ echo ╚════════════════════════
 echo.
 
 python gui_server.py
+echo.
 pause
 
