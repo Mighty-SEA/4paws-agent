@@ -228,8 +228,137 @@ class VersionManager:
         VersionManager.save_versions(versions)
 
 
+class NetworkUtils:
+    """Network utility functions"""
+    
+    @staticmethod
+    def test_connectivity(url: str = "https://registry.npmjs.org/", timeout: int = 5) -> bool:
+        """Test network connectivity to a URL"""
+        try:
+            response = requests.get(url, timeout=timeout)
+            return response.status_code == 200
+        except:
+            return False
+    
+    @staticmethod
+    def get_best_registry() -> str:
+        """Test and return the fastest npm registry"""
+        registries = [
+            ("https://registry.npmjs.org/", "Official npm"),
+            ("https://registry.npmmirror.com/", "npmmirror (China)"),
+            ("https://registry.npm.taobao.org/", "Taobao (China)"),
+        ]
+        
+        logger.info("🔍 Testing npm registries for best connection...")
+        fastest = None
+        fastest_time = float('inf')
+        
+        for url, name in registries:
+            try:
+                import time
+                start = time.time()
+                response = requests.head(url, timeout=3)
+                elapsed = time.time() - start
+                
+                if response.status_code == 200 and elapsed < fastest_time:
+                    fastest = url
+                    fastest_time = elapsed
+                    logger.info(f"   ✅ {name}: {elapsed:.2f}s")
+                else:
+                    logger.info(f"   ⚠️  {name}: timeout or error")
+            except:
+                logger.info(f"   ❌ {name}: unreachable")
+        
+        if fastest:
+            logger.info(f"✅ Selected: {fastest} ({fastest_time:.2f}s)")
+            return fastest
+        else:
+            logger.warning("⚠️  All registries unreachable, using default")
+            return "https://registry.npmjs.org/"
+
+
+class DiskUtils:
+    """Disk utility functions"""
+    
+    @staticmethod
+    def get_free_space(path: Path) -> int:
+        """Get free disk space in bytes"""
+        import shutil
+        stat = shutil.disk_usage(path)
+        return stat.free
+    
+    @staticmethod
+    def check_disk_space(path: Path, required_gb: float = 5.0) -> bool:
+        """Check if there's enough disk space"""
+        try:
+            free_bytes = DiskUtils.get_free_space(path)
+            free_gb = free_bytes / (1024 ** 3)
+            
+            logger.info(f"💾 Disk space check: {free_gb:.2f} GB free")
+            
+            if free_gb < required_gb:
+                logger.error(f"❌ Insufficient disk space!")
+                logger.error(f"   Required: {required_gb:.2f} GB")
+                logger.error(f"   Available: {free_gb:.2f} GB")
+                logger.error(f"   Free up at least {required_gb - free_gb:.2f} GB")
+                return False
+            
+            logger.info(f"✅ Sufficient disk space ({free_gb:.2f} GB)")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Could not check disk space: {e}")
+            return True  # Don't block if check fails
+
+
 class ToolsManager:
     """Manage portable Node.js, pnpm, and MariaDB"""
+    
+    @staticmethod
+    def setup_pnpm_config():
+        """Configure pnpm for optimal performance"""
+        try:
+            pnpm_exe = ToolsManager.get_pnpm_path() / "pnpm.exe"
+            if not pnpm_exe.exists():
+                return
+            
+            logger.info("🔧 Configuring pnpm for optimal performance...")
+            
+            # Get best registry
+            best_registry = NetworkUtils.get_best_registry()
+            
+            # Configure pnpm
+            configs = [
+                ("registry", best_registry),
+                ("store-dir", str(Config.DATA_DIR / "pnpm-store")),
+                ("network-timeout", "300000"),  # 5 minutes
+                ("fetch-retries", "3"),
+                ("fetch-retry-mintimeout", "10000"),
+                ("fetch-retry-maxtimeout", "60000"),
+            ]
+            
+            env = os.environ.copy()
+            node_dir = str(ToolsManager.get_node_path().absolute())
+            pnpm_dir = str(ToolsManager.get_pnpm_path().absolute())
+            env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
+            
+            for key, value in configs:
+                try:
+                    subprocess.run(
+                        [str(pnpm_exe), "config", "set", key, value],
+                        env=env,
+                        capture_output=True,
+                        timeout=10,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    logger.info(f"   ✅ Set {key}")
+                except:
+                    logger.warning(f"   ⚠️  Could not set {key}")
+            
+            logger.info("✅ pnpm configuration complete")
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Could not configure pnpm: {e}")
     
     @staticmethod
     def get_node_path():
@@ -767,13 +896,43 @@ class ProcessManager:
                     creationflags=creation_flags
                 )
             
-            # Wait a bit and check if process is still running
+            # Wait and verify MariaDB is actually ready
             import time
-            time.sleep(2)
+            logger.info("⏳ Waiting for MariaDB to be ready...")
+            
+            # Wait up to 10 seconds for MariaDB to start accepting connections
+            max_wait = 10
+            connected = False
+            for i in range(max_wait):
+                time.sleep(1)
+                
+                # Check if process crashed
+                if process.poll() is not None:
+                    logger.error(f"❌ MariaDB failed to start (exit code: {process.returncode})")
+                    logger.error(f"📝 Log file: {log_file}")
+                    break
+                
+                # Try to connect to MariaDB
+                try:
+                    mysql_exe = mariadb_path / "bin" / "mysql.exe"
+                    test_result = subprocess.run(
+                        [str(mysql_exe), "-u", Config.MARIADB_USER, "-P", str(Config.MARIADB_PORT), "-e", "SELECT 1;"],
+                        capture_output=True,
+                        timeout=2,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if test_result.returncode == 0:
+                        connected = True
+                        logger.info(f"✅ MariaDB is ready (took {i+1}s)")
+                        break
+                except:
+                    pass  # Try again
+            
+            if not connected and process.poll() is None:
+                logger.warning(f"⚠️  MariaDB started but connection test timed out")
+                logger.warning(f"   Process is running, continuing anyway...")
             
             if process.poll() is not None:
-                logger.error(f"❌ MariaDB failed to start (exit code: {process.returncode})")
-                logger.error(f"📝 Log file: {log_file}")
                 
                 # Read and display last lines from log file for debugging
                 try:
@@ -1144,6 +1303,22 @@ class Agent:
         ProcessManager.installation_in_progress = True
         
         log("🚀 Starting first-time installation...")
+        log("")
+        log("🔍 Pre-installation checks...")
+        
+        # Check disk space
+        if not DiskUtils.check_disk_space(Config.BASE_DIR, required_gb=5.0):
+            log("❌ Insufficient disk space!", 'error')
+            return False
+        
+        # Check network connectivity
+        log("🌐 Testing network connectivity...")
+        if not NetworkUtils.test_connectivity():
+            log("❌ No internet connection!", 'error')
+            log("💡 Please check your internet connection and try again", 'warning')
+            return False
+        log("✅ Network connectivity OK")
+        log("")
         
         try:
             # Step 0: Setup tools first (Node.js, pnpm, MariaDB) (0-20%)
@@ -1337,6 +1512,11 @@ class Agent:
         success = True
         success &= ToolsManager.setup_nodejs()
         success &= ToolsManager.setup_pnpm()
+        
+        # Configure pnpm after setup
+        if success:
+            ToolsManager.setup_pnpm_config()
+        
         success &= ToolsManager.setup_mariadb()
         success &= ToolsManager.init_mariadb()
         
@@ -1349,6 +1529,9 @@ class Agent:
     def _setup_apps_with_progress(self, component: str, progress_callback, log):
         """Setup apps with granular progress updates"""
         log("🔧 Setting up applications...")
+        
+        # Enable verbose mode for web interface (always show detailed logs during first install)
+        self._web_log_callback = log  # Store for use in subprocess calls
         
         # Ensure .env files exist
         if component in ["backend", "all"] and Config.BACKEND_DIR.exists():
@@ -1375,14 +1558,14 @@ class Agent:
         if component in ["backend", "all"]:
             if progress_callback:
                 progress_callback(42, 'install', 'active', 'Backend Setup', 'Installing backend dependencies...')
-            success &= self._setup_backend_with_heartbeat()
+            success &= self._setup_backend_with_heartbeat(log_callback=log)
             if progress_callback:
                 progress_callback(55, 'install', 'active', 'Backend Setup', 'Backend dependencies installed')
         
         if component in ["frontend", "all"]:
             if progress_callback:
                 progress_callback(60, 'install', 'active', 'Frontend Setup', 'Installing frontend dependencies...')
-            success &= self._setup_frontend_with_heartbeat()
+            success &= self._setup_frontend_with_heartbeat(log_callback=log)
             if progress_callback:
                 progress_callback(75, 'install', 'active', 'Frontend Setup', 'Frontend dependencies installed')
         
@@ -1405,10 +1588,14 @@ class Agent:
         
         return success
     
-    def _run_with_heartbeat(self, cmd, cwd, env, operation_name: str, timeout: int = 300) -> subprocess.CompletedProcess:
-        """Run a subprocess with heartbeat logging every 15 seconds"""
+    def _run_with_heartbeat(self, cmd, cwd, env, operation_name: str, timeout: int = 300, verbose: bool = False, log_callback=None) -> subprocess.CompletedProcess:
+        """Run a subprocess with heartbeat logging every 15 seconds and optional real-time output"""
         import threading
         import time
+        
+        if verbose:
+            # Run with real-time output capture, pass log_callback
+            return self._run_with_realtime_output(cmd, cwd, env, operation_name, timeout, log_callback)
         
         # Flag to stop heartbeat
         stop_heartbeat = threading.Event()
@@ -1439,26 +1626,173 @@ class Agent:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             return result
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"⏱️  Operation timed out after {timeout}s")
+            logger.error(f"💡 This usually means:")
+            logger.error(f"   1. Very slow internet connection")
+            logger.error(f"   2. npm registry server is slow")
+            logger.error(f"   3. Antivirus is scanning files")
+            logger.error(f"   4. Disk I/O is very slow")
+            logger.error(f"")
+            logger.error(f"🔧 Suggested fixes:")
+            logger.error(f"   1. Try again with better internet connection")
+            logger.error(f"   2. Temporarily disable antivirus during installation")
+            logger.error(f"   3. Use: pnpm config set registry https://registry.npmmirror.com/")
+            raise
         finally:
             # Stop heartbeat
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=1)
     
-    def _setup_backend_with_heartbeat(self) -> bool:
+    def _run_with_realtime_output(self, cmd, cwd, env, operation_name: str, timeout: int = 300, log_callback=None) -> subprocess.CompletedProcess:
+        """Run subprocess with real-time output logging (for verbose mode)"""
+        import threading
+        import time
+        import queue
+        
+        def log_msg(msg, level='info'):
+            """Helper to log both to logger and callback"""
+            if level == 'info':
+                logger.info(msg)
+            elif level == 'error':
+                logger.error(msg)
+            elif level == 'warning':
+                logger.warning(msg)
+            
+            # Also send to callback if provided
+            if log_callback:
+                log_callback(msg, level)
+        
+        log_msg(f"📋 Running: {' '.join(str(c) for c in cmd)}")
+        log_msg(f"📂 Working dir: {cwd}")
+        log_msg(f"⏳ Starting {operation_name} (verbose mode)...")
+        
+        # Create process
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Queue for output lines
+        output_queue = queue.Queue()
+        output_lines = []
+        
+        def read_output():
+            """Read output lines and put in queue"""
+            for line in process.stdout:
+                output_queue.put(line)
+                output_lines.append(line)
+            process.stdout.close()
+        
+        # Start output reader thread
+        reader_thread = threading.Thread(target=read_output, daemon=True)
+        reader_thread.start()
+        
+        # Monitor output and timeout
+        start_time = time.time()
+        last_log_time = start_time
+        
+        try:
+            while True:
+                # Check if process finished
+                if process.poll() is not None:
+                    break
+                
+                # Check timeout
+                if time.time() - start_time > timeout:
+                    process.kill()
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                
+                # Log output lines
+                try:
+                    line = output_queue.get(timeout=1)
+                    # Only log important lines to avoid spam
+                    line_lower = line.lower()
+                    if any(keyword in line_lower for keyword in [
+                        'progress', 'downloading', 'error', 'warn', 'warning',
+                        'fetching', 'reused', 'added', 'packages',
+                        'resolving', 'building', 'lockfile', 'deprecated'
+                    ]):
+                        # Clean up the line for better display
+                        clean_line = line.strip()
+                        if clean_line:
+                            # Add appropriate emoji based on content
+                            if 'error' in line_lower:
+                                log_msg(f"   ❌ {clean_line}", 'error')
+                            elif 'warn' in line_lower:
+                                log_msg(f"   ⚠️  {clean_line}", 'warning')
+                            elif 'progress' in line_lower or 'resolving' in line_lower:
+                                log_msg(f"   🔄 {clean_line}", 'info')
+                            elif 'downloading' in line_lower or 'fetching' in line_lower:
+                                log_msg(f"   📥 {clean_line}", 'info')
+                            elif 'added' in line_lower or 'reused' in line_lower:
+                                log_msg(f"   ✅ {clean_line}", 'success')
+                            else:
+                                log_msg(f"   📦 {clean_line}", 'info')
+                    last_log_time = time.time()
+                except queue.Empty:
+                    # No output for 1 second, check if we should log heartbeat
+                    if time.time() - last_log_time > 15:
+                        elapsed = int(time.time() - start_time)
+                        log_msg(f"   ⏳ Still {operation_name}... ({elapsed}s elapsed)", 'info')
+                        last_log_time = time.time()
+            
+            # Wait for reader thread
+            reader_thread.join(timeout=1)
+            
+            # Create result object
+            returncode = process.returncode
+            stdout = ''.join(output_lines)
+            
+            # Create CompletedProcess-like object
+            class Result:
+                def __init__(self, returncode, stdout):
+                    self.returncode = returncode
+                    self.stdout = stdout
+                    self.stderr = ""
+            
+            return Result(returncode, stdout)
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"⏱️  Operation timed out after {timeout}s")
+            logger.error(f"💡 This usually means:")
+            logger.error(f"   1. Very slow internet connection")
+            logger.error(f"   2. npm registry server is slow")
+            logger.error(f"   3. Antivirus is scanning files")
+            logger.error(f"   4. Disk I/O is very slow")
+            logger.error(f"")
+            logger.error(f"🔧 Suggested fixes:")
+            logger.error(f"   1. Try again with better internet connection")
+            logger.error(f"   2. Temporarily disable antivirus during installation")
+            logger.error(f"   3. Use: pnpm config set registry https://registry.npmmirror.com/")
+            raise
+    
+    def _setup_backend_with_heartbeat(self, log_callback=None) -> bool:
         """Setup backend with heartbeat logs during long operations"""
-        return self._setup_backend()
+        return self._setup_backend(log_callback=log_callback)
     
-    def _setup_frontend_with_heartbeat(self) -> bool:
+    def _setup_frontend_with_heartbeat(self, log_callback=None) -> bool:
         """Setup frontend with heartbeat logs during long operations"""
-        return self._setup_frontend()
+        return self._setup_frontend(log_callback=log_callback)
     
-    def _setup_backend(self) -> bool:
+    def _setup_backend(self, log_callback=None) -> bool:
         """Setup backend: pnpm install + prisma generate + migrate"""
         if not Config.BACKEND_DIR.exists():
             logger.error("❌ Backend not installed! Run: python agent.py install backend")
             return False
         
         logger.info("🔧 Setting up backend...")
+        
+        # Use web log callback if provided (for first-time install web interface)
+        use_log_callback = log_callback if log_callback else None
         
         # Get full path to pnpm executable
         pnpm_path = ToolsManager.get_pnpm_path()
@@ -1474,21 +1808,69 @@ class Agent:
         env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
         
         try:
-            # 1. Install dependencies
+            # 1. Install dependencies with retry
+            # Check if verbose mode is enabled (CLI mode) or web callback exists (web mode)
+            verbose_mode = os.getenv('PNPM_VERBOSE', '0') == '1' or os.getenv('VERBOSE', '0') == '1'
+            # Always use verbose for web interface during first install to show progress
+            force_verbose = use_log_callback is not None
+            
             logger.info("📦 Installing dependencies...")
-            logger.info("⏳ This may take 30-60 seconds, please wait...")
-            result = self._run_with_heartbeat(
-                [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
-                str(Config.BACKEND_DIR),
-                env,
-                "installing backend dependencies",
-                timeout=180
-            )
-            if result.returncode != 0:
-                logger.error(f"❌ Failed to install dependencies:")
-                logger.error(result.stderr)
-                return False
-            logger.info("✅ Dependencies installed")
+            if verbose_mode or force_verbose:
+                msg = "📋 Verbose mode enabled - showing detailed pnpm output..."
+                logger.info(msg)
+                if use_log_callback:
+                    use_log_callback(msg, 'info')
+            logger.info("⏳ This may take 1-5 minutes on normal connections, up to 30 minutes on very slow connections...")
+            
+            max_retries = 2
+            for attempt in range(1, max_retries + 1):
+                try:
+                    if attempt > 1:
+                        logger.info(f"🔄 Retry attempt {attempt}/{max_retries}...")
+                        # Cleanup partial node_modules on retry
+                        node_modules = Config.BACKEND_DIR / "node_modules"
+                        if node_modules.exists():
+                            logger.info("🧹 Cleaning up partial installation...")
+                            try:
+                                shutil.rmtree(node_modules)
+                                logger.info("✅ Cleanup complete")
+                            except Exception as e:
+                                logger.warning(f"⚠️  Could not cleanup: {e}")
+                    
+                    result = self._run_with_heartbeat(
+                        [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
+                        str(Config.BACKEND_DIR),
+                        env,
+                        "installing backend dependencies",
+                        timeout=1800,  # Increased to 1800s (30 minutes) for very slow connections
+                        verbose=verbose_mode or force_verbose,  # Enable verbose if CLI mode or web interface
+                        log_callback=use_log_callback  # Pass callback for web interface
+                    )
+                    if result.returncode != 0:
+                        if attempt < max_retries:
+                            logger.warning(f"⚠️  Installation failed (attempt {attempt}/{max_retries})")
+                            logger.info("⏳ Waiting 5 seconds before retry...")
+                            import time
+                            time.sleep(5)
+                            continue
+                        else:
+                            logger.error(f"❌ Failed to install dependencies after {max_retries} attempts:")
+                            logger.error(result.stderr)
+                            return False
+                    
+                    logger.info("✅ Dependencies installed")
+                    break
+                    
+                except subprocess.TimeoutExpired:
+                    if attempt < max_retries:
+                        logger.warning(f"⏱️  Installation timeout (attempt {attempt}/{max_retries})")
+                        logger.info("⏳ Waiting 10 seconds before retry...")
+                        import time
+                        time.sleep(10)
+                        continue
+                    else:
+                        logger.error(f"❌ Installation timed out after {max_retries} attempts")
+                        raise
             
             # 2. Generate Prisma client
             prisma_client = Config.BACKEND_DIR / "node_modules" / ".prisma" / "client"
@@ -1496,13 +1878,13 @@ class Agent:
                 logger.info("✅ Prisma client already exists, skipping generate...")
             else:
                 logger.info("🔧 Generating Prisma client...")
-                logger.info("⏳ This may take 1-2 minutes, please wait...")
+                logger.info("⏳ This may take 1-5 minutes on normal connections, up to 30 minutes on very slow connections...")
                 result = self._run_with_heartbeat(
                     [str(pnpm_exe), "prisma", "generate"],
                     str(Config.BACKEND_DIR),
                     env,
                     "generating Prisma client",
-                    timeout=180
+                    timeout=1800  # Increased to 1800s (30 minutes) for very slow connections
                 )
                 if result.returncode != 0:
                     logger.error(f"❌ Failed to generate Prisma client:")
@@ -1555,6 +1937,33 @@ class Agent:
             else:
                 logger.info("✅ Migrations completed")
             
+            # 5. Run seed for first-time installation (users and services only)
+            logger.info("🌱 Seeding initial data (users & services)...")
+            seed_file = Config.BACKEND_DIR / "prisma" / "seed-first-install.ts"
+            if seed_file.exists():
+                result = subprocess.run(
+                    [str(pnpm_exe), "exec", "ts-node", str(seed_file)],
+                    cwd=str(Config.BACKEND_DIR),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    shell=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                if result.returncode != 0:
+                    logger.warning(f"⚠️  Seeding failed (this is non-critical):")
+                    logger.warning(result.stderr)
+                    logger.info("💡 You can manually run seed later with: pnpm prisma:seed")
+                else:
+                    logger.info("✅ Initial data seeded")
+                    # Show credentials from seed output
+                    if result.stdout:
+                        for line in result.stdout.split('\n'):
+                            if 'Master:' in line or 'Admin:' in line or 'Default credentials:' in line:
+                                logger.info(f"   {line.strip()}")
+            else:
+                logger.warning("⚠️  Seed file not found, skipping seeding")
+            
             logger.info("✅ Backend setup complete!")
             return True
             
@@ -1564,13 +1973,16 @@ class Agent:
             logger.error(traceback.format_exc())
             return False
     
-    def _setup_frontend(self) -> bool:
+    def _setup_frontend(self, log_callback=None) -> bool:
         """Setup frontend: pnpm install"""
         if not Config.FRONTEND_DIR.exists():
             logger.error("❌ Frontend not installed! Run: python agent.py install frontend")
             return False
         
         logger.info("🔧 Setting up frontend...")
+        
+        # Use web log callback if provided (for first-time install web interface)
+        use_log_callback = log_callback if log_callback else None
         
         # Get full path to pnpm executable
         pnpm_path = ToolsManager.get_pnpm_path()
@@ -1586,20 +1998,69 @@ class Agent:
         env['PATH'] = f"{node_dir};{pnpm_dir};{env.get('PATH', '')}"
         
         try:
-            # Install dependencies
+            # Install dependencies with retry
+            # Check if verbose mode is enabled (CLI mode) or web callback exists (web mode)
+            verbose_mode = os.getenv('PNPM_VERBOSE', '0') == '1' or os.getenv('VERBOSE', '0') == '1'
+            # Always use verbose for web interface during first install to show progress
+            force_verbose = use_log_callback is not None
+            
             logger.info("📦 Installing dependencies...")
-            logger.info("⏳ This may take 1-2 minutes, please wait...")
-            result = self._run_with_heartbeat(
-                [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
-                str(Config.FRONTEND_DIR),
-                env,
-                "installing frontend dependencies",
-                timeout=240
-            )
-            if result.returncode != 0:
-                logger.error(f"❌ Failed to install dependencies:")
-                logger.error(result.stderr)
-                return False
+            if verbose_mode or force_verbose:
+                msg = "📋 Verbose mode enabled - showing detailed pnpm output..."
+                logger.info(msg)
+                if use_log_callback:
+                    use_log_callback(msg, 'info')
+            logger.info("⏳ This may take 2-5 minutes on normal connections, up to 30 minutes on very slow connections...")
+            
+            max_retries = 2
+            for attempt in range(1, max_retries + 1):
+                try:
+                    if attempt > 1:
+                        logger.info(f"🔄 Retry attempt {attempt}/{max_retries}...")
+                        # Cleanup partial node_modules on retry
+                        node_modules = Config.FRONTEND_DIR / "node_modules"
+                        if node_modules.exists():
+                            logger.info("🧹 Cleaning up partial installation...")
+                            try:
+                                shutil.rmtree(node_modules)
+                                logger.info("✅ Cleanup complete")
+                            except Exception as e:
+                                logger.warning(f"⚠️  Could not cleanup: {e}")
+                    
+                    result = self._run_with_heartbeat(
+                        [str(pnpm_exe), "install", "--production", "--ignore-scripts"],
+                        str(Config.FRONTEND_DIR),
+                        env,
+                        "installing frontend dependencies",
+                        timeout=1800,  # Increased to 1800s (30 minutes) for very slow connections
+                        verbose=verbose_mode or force_verbose,  # Enable verbose if CLI mode or web interface
+                        log_callback=use_log_callback  # Pass callback for web interface
+                    )
+                    if result.returncode != 0:
+                        if attempt < max_retries:
+                            logger.warning(f"⚠️  Installation failed (attempt {attempt}/{max_retries})")
+                            logger.info("⏳ Waiting 5 seconds before retry...")
+                            import time
+                            time.sleep(5)
+                            continue
+                        else:
+                            logger.error(f"❌ Failed to install dependencies after {max_retries} attempts:")
+                            logger.error(result.stderr)
+                            return False
+                    
+                    logger.info("✅ Frontend dependencies installed")
+                    break
+                    
+                except subprocess.TimeoutExpired:
+                    if attempt < max_retries:
+                        logger.warning(f"⏱️  Installation timeout (attempt {attempt}/{max_retries})")
+                        logger.info("⏳ Waiting 10 seconds before retry...")
+                        import time
+                        time.sleep(10)
+                        continue
+                    else:
+                        logger.error(f"❌ Installation timed out after {max_retries} attempts")
+                        raise
             
             logger.info("✅ Frontend setup complete!")
             return True
@@ -1832,12 +2293,21 @@ def set_agent_log_manager(log_manager):
 
 def main():
     """Main entry point"""
+    # Check if verbose mode is enabled
+    verbose_enabled = os.getenv('PNPM_VERBOSE', '0') == '1' or os.getenv('VERBOSE', '0') == '1'
+    
     print("""
 ╔════════════════════════════════════════╗
-║   4Paws Deployment Agent v1.0         ║
+║   4Paws Deployment Agent v1.1         ║
 ║   Auto-update & manage releases       ║
 ╚════════════════════════════════════════╝
     """)
+    
+    if verbose_enabled:
+        print("🔊 VERBOSE MODE ENABLED")
+        print("   • Showing detailed pnpm output")
+        print("   • Real-time installation progress")
+        print("")
     
     agent = Agent()
     
