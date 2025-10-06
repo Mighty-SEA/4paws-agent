@@ -2126,6 +2126,15 @@ class Agent:
         """Start all services (with optional auto-setup)"""
         logger.info("🚀 Starting all services...")
         
+        # Check license before starting services
+        from core import LicenseManager
+        
+        if not LicenseManager.check_and_block():
+            # License invalid - start license expired page
+            logger.info("🔒 Starting license expired page instead of services...")
+            LicenseManager.start_license_page(port=3100)
+            return False
+        
         # Auto-detect if setup needed (unless skip_setup is True)
         if not skip_setup:
             needs_setup = False

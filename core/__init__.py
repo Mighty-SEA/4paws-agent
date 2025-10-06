@@ -6,6 +6,7 @@ Provides configuration, logging, and path utilities
 from .paths import get_base_dir, get_writable_dir
 from .config import Config
 from .logger import LogManagerHandler, setup_logging, get_log_manager_handler
+from .license import LicenseManager
 
 __all__ = [
     'get_base_dir',
@@ -14,4 +15,5 @@ __all__ = [
     'LogManagerHandler',
     'setup_logging',
     'get_log_manager_handler',
+    'LicenseManager',
 ]

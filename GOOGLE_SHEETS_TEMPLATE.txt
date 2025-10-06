@@ -1,0 +1,103 @@
+# ============================================================================
+# Google Sheets Template for 4Paws License Management
+# ============================================================================
+# 
+# Instructions:
+# 1. Create new Google Sheet
+# 2. Copy-paste the data below (choose one version)
+# 3. Setup Apps Script (see GOOGLE_SHEETS_QUICK_START.md)
+# 
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# SIMPLE VERSION (1 Client - Recommended)
+# ----------------------------------------------------------------------------
+# Copy everything below this line (4 rows):
+
+Status	Expiry	Last Payment	Notes
+active	2025-12-31	2025-01-28	Paid January 2025
+
+
+# ----------------------------------------------------------------------------
+# EXTENDED VERSION (With Payment Tracking)
+# ----------------------------------------------------------------------------
+# Copy everything below this line (4 rows):
+
+Status	Expiry	Last Payment	Amount	Payment Method	Notes
+active	2025-12-31	2025-01-28	500000	Transfer BCA	Paid January 2025
+
+
+# ============================================================================
+# How to Update Monthly (30 seconds from phone):
+# ============================================================================
+# 
+# 1. Open Google Sheets app on phone 📱
+# 2. Tap Cell B2 (Expiry column, row 2)
+# 3. Change date: 2025-02-28 → 2025-03-31
+# 4. Tap Cell C2 (Last Payment)
+# 5. Change date to today: 2025-02-28
+# 6. Done! ✅
+# 
+# Client restarts app → License extended automatically!
+# 
+# ============================================================================
+# Status Values:
+# ============================================================================
+# 
+# active     → License valid, app runs normally
+# suspended  → License blocked, show expired page
+# 
+# ============================================================================
+# Examples:
+# ============================================================================
+
+# Example 1: Normal monthly update
+# Before (January):
+Status	Expiry	Last Payment	Notes
+active	2025-01-31	2024-12-28	Paid December 2024
+
+# After payment on Jan 28:
+Status	Expiry	Last Payment	Notes
+active	2025-02-28	2025-01-28	Paid January 2025
+
+
+# Example 2: Suspend for late payment
+# Client belum bayar:
+Status	Expiry	Last Payment	Notes
+suspended	2025-01-31	2024-12-28	Payment overdue
+
+# After client pays:
+Status	Expiry	Last Payment	Notes
+active	2025-02-28	2025-01-28	Paid January (late)
+
+
+# Example 3: Extended license (3 months prepaid)
+# Client bayar 3 bulan sekaligus:
+Status	Expiry	Last Payment	Notes
+active	2025-04-30	2025-01-28	Paid 3 months (Jan-Mar)
+
+# ============================================================================
+# Optional: Payment History Sheet
+# ============================================================================
+# 
+# You can create a second sheet named "Payment History" to track all payments:
+
+Date	Amount	Extended To	Method	Status	Notes
+2024-12-28	500000	2025-01-31	BCA	Paid	First month
+2025-01-28	500000	2025-02-28	BCA	Paid	Renewal
+2025-02-28	500000	2025-03-31	BCA	Paid	Renewal
+
+# ============================================================================
+# Tips:
+# ============================================================================
+# 
+# 1. Use Google Sheets mobile app for quick updates (faster than desktop)
+# 2. Set monthly reminder on Google Calendar for payment follow-up
+# 3. Keep a backup of the Apps Script URL in your notes app
+# 4. Use conditional formatting to highlight:
+#    - Red if Status = "suspended"
+#    - Green if Status = "active"
+# 5. Add client contact info in Notes column for quick reference
+# 
+# ============================================================================
+

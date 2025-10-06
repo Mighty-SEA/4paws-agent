@@ -1,6 +1,7 @@
 """
 4Paws Agent Web GUI Server
 Web-based dashboard for managing 4Paws deployment agent
+Protected with HTTP Basic Authentication
 """
 
 import os
@@ -11,9 +12,11 @@ import psutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request, send_file
+from functools import wraps
+from flask import Flask, render_template, jsonify, request, send_file, Response
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+from dotenv import load_dotenv
 
 # Add agent.py to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -50,6 +53,37 @@ set_agent_log_manager(log_manager)
 # Reduce Flask logging verbosity (disable HTTP access logs in Web GUI)
 import logging as flask_logging
 flask_logging.getLogger('werkzeug').setLevel(flask_logging.WARNING)
+
+# Load environment variables for auth
+load_dotenv(Config.BASE_DIR / '.env')
+
+# HTTP Basic Auth Configuration
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '4paws-admin-2025')
+
+def check_auth(username, password):
+    """Check if username/password is valid"""
+    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+
+def authenticate():
+    """Send 401 response that enables basic auth"""
+    return Response(
+        '🔒 Access Denied\n\n'
+        '4Paws Agent - Admin Access Required\n'
+        'Please login with valid credentials.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="4Paws Agent - Admin Access Required"'}
+    )
+
+def requires_auth(f):
+    """Decorator to require HTTP Basic Auth"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
 
 # Update check cache (1 hour)
 UPDATE_CHECK_CACHE = {
@@ -105,16 +139,19 @@ def get_process_status(name):
     return {'running': False, 'pid': None, 'cpu': 0, 'memory': 0}
 
 @app.route('/')
+@requires_auth
 def index():
     """Render main dashboard"""
     return render_template('index.html')
 
 @app.route('/logs')
+@requires_auth
 def logs():
     """Render logs page"""
     return render_template('logs.html')
 
 @app.route('/api/status')
+@requires_auth
 def api_status():
     """Get current status of all services"""
     versions = VersionManager.load_versions()
@@ -143,11 +180,22 @@ def api_status():
     })
 
 @app.route('/api/start/<service>', methods=['POST'])
+@requires_auth
 def api_start(service):
     """Start a service"""
     try:
         log_manager.start_action(f'start-{service}')
         log_manager.info(f"🚀 Starting {service}...")
+        
+        # Check license before starting ANY service
+        from core import LicenseManager
+        if not LicenseManager.check_and_block():
+            log_manager.error("❌ License invalid - cannot start services")
+            log_manager.end_action(f'start-{service}', False)
+            return jsonify({
+                'success': False,
+                'error': 'License expired or invalid. Please renew license to continue.'
+            }), 403
         
         if service == 'all':
             # Don't skip setup - let auto-detect handle it
@@ -175,6 +223,7 @@ def api_start(service):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/stop/<service>', methods=['POST'])
+@requires_auth
 def api_stop(service):
     """Stop a service"""
     try:
@@ -246,6 +295,7 @@ def api_stop(service):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/updates')
+@requires_auth
 def api_updates():
     """Check for updates"""
     try:
@@ -255,6 +305,7 @@ def api_updates():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/logs/<service>')
+@requires_auth
 def api_logs(service):
     """Get service logs"""
     try:
@@ -270,6 +321,7 @@ def api_logs(service):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/install/<component>', methods=['POST'])
+@requires_auth
 def api_install(component):
     """Install frontend/backend/all"""
     try:
@@ -291,6 +343,7 @@ def api_install(component):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/update/<component>', methods=['POST'])
+@requires_auth
 def api_update(component):
     """Update frontend/backend/all"""
     try:
@@ -319,6 +372,7 @@ def api_update(component):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/setup/<component>', methods=['POST'])
+@requires_auth
 def api_setup(component):
     """Setup apps (install dependencies, migrate, etc)"""
     try:
@@ -340,6 +394,7 @@ def api_setup(component):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/seed', methods=['POST'])
+@requires_auth
 def api_seed():
     """Seed database"""
     try:
@@ -364,6 +419,7 @@ def api_seed():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/check-tools')
+@requires_auth
 def api_check_tools():
     """Check if portable tools are installed"""
     try:
@@ -388,6 +444,7 @@ def api_check_tools():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/update/check')
+@requires_auth
 def api_update_check():
     """Check for updates (for application integration) - Cached for 1 hour"""
     try:
@@ -454,6 +511,7 @@ def api_update_check():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/update/check/clear-cache', methods=['POST'])
+@requires_auth
 def api_update_check_clear_cache():
     """Clear update check cache (force fresh check on next request)"""
     try:
@@ -470,6 +528,7 @@ def api_update_check_clear_cache():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/update/start', methods=['POST'])
+@requires_auth
 def api_update_start():
     """Start update process (non-blocking with WebSocket notifications)"""
     try:
@@ -655,6 +714,7 @@ def perform_update_with_notifications(component):
 # ============================================================================
 
 @app.route('/api/logs')
+@requires_auth
 def api_get_logs():
     """Get log entries from buffer"""
     action = request.args.get('action')
@@ -670,6 +730,7 @@ def api_get_logs():
     })
 
 @app.route('/api/logs/download')
+@requires_auth
 def api_download_logs():
     """Download full log file"""
     from flask import send_file
@@ -688,6 +749,7 @@ def api_download_logs():
     )
 
 @app.route('/api/logs/clear', methods=['POST'])
+@requires_auth
 def api_clear_logs():
     """Clear log buffer"""
     log_manager.clear_logs()
@@ -697,6 +759,7 @@ def api_clear_logs():
     })
 
 @app.route('/api/logs/current-action')
+@requires_auth
 def api_current_action():
     """Get currently running action"""
     action = log_manager.get_current_action()

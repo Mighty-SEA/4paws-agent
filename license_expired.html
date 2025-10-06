@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4Paws - Perpanjang License</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #6dd5ed 0%, #2193b0 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 480px;
+            width: 90%;
+            padding: 2.5rem;
+            text-align: center;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .icon {
+            font-size: 60px;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            color: #2c3e50;
+            font-size: 1.6rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+
+        .message {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 1.25rem;
+            margin: 1.5rem 0;
+            color: #555;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .contact {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            color: white;
+        }
+
+        .contact h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.4rem;
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        .footer {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #dee2e6;
+            color: #95a5a6;
+            font-size: 0.85rem;
+        }
+
+        .info-badge {
+            display: inline-block;
+            padding: 0.4rem 0.9rem;
+            background: #e3f2fd;
+            color: #1976d2;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            margin: 0.5rem 0 1rem 0;
+        }
+
+        .restart-button {
+            display: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 0.9rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .restart-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .restart-button:active {
+            transform: translateY(0);
+        }
+
+        .restart-button.show {
+            display: inline-block;
+            animation: bounceIn 0.5s ease-out;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .loading {
+            display: none;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 2rem 1.25rem;
+            }
+            
+            h1 {
+                font-size: 1.4rem;
+            }
+            
+            .restart-button {
+                width: 100%;
+                padding: 0.9rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">⏰</div>
+        <h1>Perpanjang License</h1>
+        <p class="subtitle">4Paws Pet Management System</p>
+        
+        <div class="info-badge" id="status">Memuat informasi...</div>
+        
+        <div class="message" id="main-message">
+            Halo! License aplikasi perlu diperpanjang agar dapat digunakan kembali. 
+            Silakan hubungi admin untuk informasi perpanjangan.
+        </div>
+
+        <button class="restart-button" id="restart-btn" onclick="restartAgent()">
+            🔄 Restart Aplikasi
+        </button>
+
+        <div class="loading" id="loading-text">
+            ⏳ Memulai ulang aplikasi...
+        </div>
+
+        <div class="contact">
+            <h3>📱 Hubungi Admin</h3>
+            <div class="contact-item">
+                <span>📧</span>
+                <span id="support-email">support@yourcompany.com</span>
+            </div>
+            <div class="contact-item">
+                <span>☎️</span>
+                <span id="support-phone">+62 xxx-xxx-xxxx</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>4Paws Agent v1.1</p>
+        </div>
+    </div>
+
+    <script>
+        let canRestart = false;
+        let lastReason = '';
+
+        // Auto-refresh untuk check license status
+        function checkLicenseStatus() {
+            fetch('/api/license-status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusBadge = document.getElementById('status');
+                    const mainMessage = document.getElementById('main-message');
+                    const restartBtn = document.getElementById('restart-btn');
+                    
+                    lastReason = data.reason || '';
+
+                    if (data.valid) {
+                        // License valid - redirect to app
+                        statusBadge.textContent = '✅ License aktif';
+                        statusBadge.style.background = '#d4edda';
+                        statusBadge.style.color = '#155724';
+                        mainMessage.textContent = 'License sudah aktif! Aplikasi akan dimulai...';
+                        restartBtn.classList.remove('show');
+                        setTimeout(() => { window.location.href = '/'; }, 1000);
+                    } else {
+                        // Update status dengan pesan yang lebih friendly
+                        let friendlyMessage = 'License perlu diperpanjang';
+                        let detailMessage = 'Halo! License aplikasi perlu diperpanjang agar dapat digunakan kembali. Silakan hubungi admin untuk informasi perpanjangan.';
+                        
+                        if (data.reason === 'License Suspended') {
+                            friendlyMessage = 'License ditangguhkan sementara';
+                            detailMessage = 'License sementara tidak aktif. Silakan hubungi admin untuk informasi lebih lanjut.';
+                            canRestart = false;
+                        } else if (data.reason === 'Online Verification Required') {
+                            friendlyMessage = 'Perlu koneksi internet';
+                            detailMessage = 'Aplikasi perlu terhubung ke internet untuk verifikasi. Mohon sambungkan ke WiFi atau data seluler, lalu klik tombol "Restart Aplikasi" di bawah.';
+                            canRestart = true;
+                            
+                            // Check if online
+                            if (navigator.onLine) {
+                                friendlyMessage = '🌐 Internet terdeteksi!';
+                                detailMessage = 'Koneksi internet tersedia. Klik tombol "Restart Aplikasi" untuk memulai ulang dan verifikasi license.';
+                                restartBtn.classList.add('show');
+                            }
+                        } else {
+                            // License expired - bisa restart juga (mungkin sudah diperpanjang dari Google Sheets)
+                            canRestart = true;
+                        }
+                        
+                        statusBadge.textContent = friendlyMessage;
+                        mainMessage.textContent = detailMessage;
+                        
+                        // Update contact info if provided
+                        if (data.support_email) {
+                            document.getElementById('support-email').textContent = data.support_email;
+                        }
+                        
+                        if (data.support_phone) {
+                            document.getElementById('support-phone').textContent = data.support_phone;
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to check license:', err);
+                    document.getElementById('status').textContent = 'Memeriksa license...';
+                });
+        }
+
+        // Restart agent function
+        function restartAgent() {
+            const loadingText = document.getElementById('loading-text');
+            const restartBtn = document.getElementById('restart-btn');
+            const statusBadge = document.getElementById('status');
+            const mainMessage = document.getElementById('main-message');
+            
+            // Show loading
+            restartBtn.style.display = 'none';
+            loadingText.classList.add('show');
+            statusBadge.textContent = '🔄 Memulai ulang...';
+            mainMessage.textContent = 'Mohon tunggu, aplikasi sedang dimulai ulang dan melakukan verifikasi license...';
+            
+            // Call restart API
+            fetch('/api/restart', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        statusBadge.textContent = '✅ Berhasil!';
+                        mainMessage.textContent = 'Aplikasi berhasil dimulai ulang. Tunggu beberapa saat...';
+                        
+                        // Wait 5 seconds then check status
+                        setTimeout(() => {
+                            loadingText.classList.remove('show');
+                            checkLicenseStatus();
+                        }, 5000);
+                    } else {
+                        statusBadge.textContent = '❌ Gagal restart';
+                        mainMessage.textContent = data.message || 'Gagal memulai ulang. Silakan coba lagi atau hubungi admin.';
+                        loadingText.classList.remove('show');
+                        restartBtn.style.display = 'inline-block';
+                    }
+                })
+                .catch(err => {
+                    console.error('Restart failed:', err);
+                    statusBadge.textContent = '❌ Gagal restart';
+                    mainMessage.textContent = 'Gagal memulai ulang. Silakan tutup aplikasi dari system tray dan jalankan kembali.';
+                    loadingText.classList.remove('show');
+                    restartBtn.style.display = 'inline-block';
+                });
+        }
+
+        // Listen for online/offline events
+        window.addEventListener('online', () => {
+            if (lastReason === 'Online Verification Required') {
+                checkLicenseStatus();
+            }
+        });
+
+        // Check immediately and every 5 seconds
+        checkLicenseStatus();
+        setInterval(checkLicenseStatus, 5000);
+    </script>
+</body>
+</html>
+
