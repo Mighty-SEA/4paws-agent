@@ -1032,10 +1032,17 @@ class ProcessManager:
             if sys.platform == 'win32':
                 creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
             
+            # Get full path to node.exe
+            node_exe = ToolsManager.get_node_path() / "node.exe"
+            if not node_exe.exists():
+                logger.error(f"❌ Node.js not found at: {node_exe}")
+                logger.error("💡 Run: python agent.py setup")
+                return False
+            
             # Start with output redirect to log file
             with open(log_file, 'w') as log:
                 process = subprocess.Popen(
-                    ["node", str(main_js)],
+                    [str(node_exe), str(main_js)],
                     cwd=str(Config.BACKEND_DIR),
                     stdout=log,
                     stderr=subprocess.STDOUT,
@@ -1937,32 +1944,76 @@ class Agent:
             else:
                 logger.info("✅ Migrations completed")
             
-            # 5. Run seed for first-time installation (users and services only)
-            logger.info("🌱 Seeding initial data (users & services)...")
-            seed_file = Config.BACKEND_DIR / "prisma" / "seed-first-install.ts"
-            if seed_file.exists():
-                result = subprocess.run(
-                    [str(pnpm_exe), "exec", "ts-node", str(seed_file)],
-                    cwd=str(Config.BACKEND_DIR),
-                    env=env,
+            # 5. Check if database needs seeding (first-time install only)
+            logger.info("🔍 Checking if database needs seeding...")
+            needs_seeding = False
+            
+            # Check if User table is empty (indicates first-time setup)
+            try:
+                mariadb_path = ToolsManager.get_mariadb_path()
+                mysql_exe = mariadb_path / "bin" / "mysql.exe"
+                check_result = subprocess.run(
+                    [
+                        str(mysql_exe),
+                        "-u", Config.MARIADB_USER,
+                        "-P", str(Config.MARIADB_PORT),
+                        Config.MARIADB_DB,
+                        "-e", "SELECT COUNT(*) FROM User;"
+                    ],
                     capture_output=True,
                     text=True,
                     shell=False,
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
-                if result.returncode != 0:
-                    logger.warning(f"⚠️  Seeding failed (this is non-critical):")
-                    logger.warning(result.stderr)
-                    logger.info("💡 You can manually run seed later with: pnpm prisma:seed")
+                
+                if check_result.returncode == 0:
+                    # Parse output to get count
+                    output_lines = check_result.stdout.strip().split('\n')
+                    if len(output_lines) > 1:
+                        count = int(output_lines[1].strip())
+                        if count == 0:
+                            needs_seeding = True
+                            logger.info("✅ Database is empty - will seed initial data")
+                        else:
+                            logger.info(f"ℹ️  Database already has {count} user(s) - skipping seeding")
                 else:
-                    logger.info("✅ Initial data seeded")
-                    # Show credentials from seed output
-                    if result.stdout:
-                        for line in result.stdout.split('\n'):
-                            if 'Master:' in line or 'Admin:' in line or 'Default credentials:' in line:
-                                logger.info(f"   {line.strip()}")
+                    # If query fails, assume table doesn't exist yet (first time)
+                    needs_seeding = True
+                    logger.info("ℹ️  User table not found - will seed initial data")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not check database state: {e}")
+                logger.info("ℹ️  Will attempt seeding anyway...")
+                needs_seeding = True
+            
+            # Run seed for first-time installation (users and services only)
+            if needs_seeding:
+                logger.info("🌱 Seeding initial data (users & services)...")
+                seed_file = Config.BACKEND_DIR / "prisma" / "seed-first-install.ts"
+                if seed_file.exists():
+                    result = subprocess.run(
+                        [str(pnpm_exe), "exec", "ts-node", str(seed_file)],
+                        cwd=str(Config.BACKEND_DIR),
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        shell=False,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if result.returncode != 0:
+                        logger.warning(f"⚠️  Seeding failed (this is non-critical):")
+                        logger.warning(result.stderr)
+                        logger.info("💡 You can manually run seed later with: pnpm prisma:seed")
+                    else:
+                        logger.info("✅ Initial data seeded")
+                        # Show credentials from seed output
+                        if result.stdout:
+                            for line in result.stdout.split('\n'):
+                                if 'Master:' in line or 'Admin:' in line or 'Default credentials:' in line:
+                                    logger.info(f"   {line.strip()}")
+                else:
+                    logger.warning("⚠️  Seed file not found, skipping seeding")
             else:
-                logger.warning("⚠️  Seed file not found, skipping seeding")
+                logger.info("✅ Database already initialized - skipping seeding")
             
             logger.info("✅ Backend setup complete!")
             return True
